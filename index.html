@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>منصة المحافظ | تسجيل الدخول ولوحة التحكم</title>
+
+<!-- ===== المكتبات ===== -->
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, sans-serif; }
+body { background: linear-gradient(135deg, #0f172a, #1e293b); color: #e2e8f0; min-height: 100vh; }
+.hidden { display: none !important; }
+
+/* ===== تسجيل الدخول ===== */
+.auth-body { display: flex; align-items: center; justify-content: center; padding: 20px; }
+.auth-card {
+  background: rgba(30, 41, 59, .9); border: 1px solid #334155;
+  border-radius: 20px; padding: 40px; width: 100%; max-width: 420px;
+  box-shadow: 0 25px 60px rgba(0,0,0,.5); backdrop-filter: blur(10px);
+}
+.logo { text-align: center; margin-bottom: 30px; }
+.logo-icon { font-size: 48px; }
+.logo h1 { font-size: 24px; margin-top: 8px; }
+.logo p { color: #94a3b8; font-size: 13px; }
+
+.input-group { margin-bottom: 16px; }
+.input-group label { display: block; font-size: 13px; color: #94a3b8; margin-bottom: 6px; }
+input {
+  width: 100%; padding: 12px 14px; border-radius: 10px;
+  border: 1px solid #475569; background: #0f172a; color: #e2e8f0;
+  font-size: 14px; outline: none; transition: border .2s;
+}
+input:focus { border-color: #38bdf8; }
+
+.btn {
+  padding: 12px 18px; border-radius: 10px; border: none; cursor: pointer;
+  font-size: 15px; font-weight: 600; transition: all .2s;
+}
+.btn:disabled { opacity: .6; cursor: wait; }
+.btn-primary { background: linear-gradient(135deg, #38bdf8, #6366f1); color: #fff; }
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(56,189,248,.3); }
+.btn-secondary { background: #334155; color: #cbd5e1; }
+.btn-outline { background: transparent; border: 1px solid #475569; color: #38bdf8; }
+.btn-outline:hover { border-color: #38bdf8; background: rgba(56,189,248,.08); }
+.btn-danger { background: #dc2626; color: #fff; margin: 2px; }
+.btn-block { width: 100%; }
+.btn-sm { padding: 8px 12px; font-size: 13px; }
+
+.divider { text-align: center; margin: 20px 0; color: #64748b; position: relative; }
+.divider::before, .divider::after {
+  content: ''; position: absolute; top: 50%; width: 40%; height: 1px; background: #334155;
+}
+.divider::before { right: 0; } .divider::after { left: 0; }
+
+.msg { padding: 10px; border-radius: 8px; margin-top: 12px; font-size: 13px; }
+.msg.error { background: rgba(220,38,38,.15); color: #f87171; }
+.msg.success { background: rgba(34,197,94,.15); color: #4ade80; }
+
+.hint { text-align: center; font-size: 11px; color: #64748b; margin-top: 20px; }
+.qr-upload-area { margin-top: 14px; text-align: center; }
+#qrCanvas { max-width: 200px; margin-top: 10px; border-radius: 8px; }
+
+/* ===== لوحة التحكم ===== */
+.navbar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 14px 24px; background: rgba(15,23,42,.85);
+  border-bottom: 1px solid #334155; position: sticky; top: 0; backdrop-filter: blur(10px);
+}
+.nav-brand { font-weight: 700; font-size: 18px; }
+.nav-user { margin-right: auto; color: #94a3b8; font-size: 14px; }
+
+.container { max-width: 1100px; margin: 24px auto; padding: 0 16px; display: grid; gap: 20px; }
+.card {
+  background: rgba(30,41,59,.85); border: 1px solid #334155;
+  border-radius: 16px; padding: 24px;
+}
+.card h2 { margin-bottom: 16px; font-size: 20px; }
+
+.user-row, .wallet-row { display: flex; gap: 24px; flex-wrap: wrap; align-items: center; }
+.user-info p { margin: 8px 0; color: #cbd5e1; }
+.qr-box { text-align: center; }
+.qr-canvas, .qr-mini { background: #fff; padding: 6px; border-radius: 10px; display: inline-block; }
+.qr-box .btn { margin-top: 10px; }
+
+.copy-row { display: flex; gap: 8px; margin-bottom: 14px; }
+.copy-row input { flex: 1; direction: ltr; }
+.wallet-row input[type=number] { max-width: 200px; margin-bottom: 10px; }
+.wallet-row label { display: block; font-size: 13px; color: #94a3b8; margin-bottom: 6px; }
+
+.admin-block { margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #334155; }
+.admin-block.no-border { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+.admin-block h3 { font-size: 15px; margin-bottom: 10px; color: #38bdf8; }
+.admin-block input { margin-bottom: 8px; }
+
+.table { width: 100%; border-collapse: collapse; }
+.table th, .table td { padding: 10px; border-bottom: 1px solid #334155; text-align: center; font-size: 14px; }
+.table th { color: #94a3b8; font-size: 13px; }
+</style>
+</head>
+
+<!-- ================== صفحة تسجيل الدخول ================== -->
+<body class="auth-body" id="authPage">
+
+<div class="auth-card">
+  <div class="logo">
+    <div class="logo-icon">💼</div>
+    <h1>منصة المحافظ</h1>
+    <p>نظام إدارة المحافظ وشحن الرصيد</p>
+  </div>
+
+  <!-- تسجيل دخول عادي -->
+  <form id="loginForm">
+    <div class="input-group">
+      <label>البريد الإلكتروني</label>
+      <input type="email" id="email" required placeholder="example@mail.com">
+    </div>
+    <div class="input-group">
+      <label>كلمة المرور</label>
+      <input type="password" id="password" required placeholder="••••••••">
+    </div>
+    <button type="submit" class="btn btn-primary btn-block" id="loginBtn">
+      تسجيل الدخول
+    </button>
+  </form>
+
+  <div class="divider"><span>أو</span></div>
+
+  <!-- زر تسجيل الدخول بـ QR -->
+  <button type="button" class="btn btn-outline btn-block" id="qrLoginBtn">
+    📷 تسجيل الدخول عبر QR Code
+  </button>
+
+  <!-- منطقة رفع صورة QR -->
+  <div id="qrUploadArea" class="qr-upload-area hidden">
+    <p>ارفع صورة QR Code الخاص بك</p>
+    <input type="file" id="qrFile" accept="image/*" hidden>
+    <button type="button" class="btn btn-secondary btn-block"
+            onclick="document.getElementById('qrFile').click()">
+      اختيار صورة QR
+    </button>
+    <canvas id="qrCanvas" class="hidden"></canvas>
+  </div>
+
+  <div id="msg" class="msg hidden"></div>
+
+  <p class="hint">🔒 بيانات الجلسة تُحفظ محلياً مؤقتاً لمدة ساعة</p>
+</div>
+
+<!-- ================== لوحة التحكم ================== -->
+<div id="dashboardPage" class="hidden">
+  <nav class="navbar">
+    <div class="nav-brand">💼 منصة المحافظ</div>
+    <div class="nav-user" id="navUser"></div>
+    <button class="btn btn-danger btn-sm" onclick="logout()">خروج</button>
+  </nav>
+
+  <main class="container">
+
+    <!-- بطاقة المستخدم + QR الشخصي -->
+    <section class="card">
+      <h2>👤 حسابي</h2>
+      <div class="user-row">
+        <div class="user-info">
+          <p>الاسم: <strong id="uName"></strong></p>
+          <p>رقم المستخدم: <strong id="uNumber"></strong></p>
+          <p>الرصيد: <strong id="uBalance"></strong> $</p>
+        </div>
+        <div class="qr-box">
+          <div id="myQR" class="qr-canvas"></div>
+          <button class="btn btn-secondary btn-sm" id="downloadQR">⬇️ تحميل QR الخاص بي</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- قائمة شحن الرصيد -->
+    <section class="card">
+      <h2>💰 شحن الرصيد</h2>
+      <p>امسح QR أو انسخ عنوان المحفظة لإتمام الدفع، ثم أرسل طلب الشحن.</p>
+      <div class="wallet-row">
+        <div id="walletQR" class="qr-canvas"></div>
+        <div class="wallet-info">
+          <label>عنوان المحفظة (USDT-TRC20):</label>
+          <div class="copy-row">
+            <input type="text" id="walletAddress" readonly>
+            <button type="button" class="btn btn-secondary btn-sm" id="copyWallet">نسخ</button>
+          </div>
+          <label>المبلغ المطلوب شحنه ($):</label>
+          <input type="number" id="amount" min="1" placeholder="مثال: 50">
+          <button class="btn btn-primary" id="requestCharge">طلب شحن الرصيد</button>
+          <div id="chargeMsg" class="msg hidden"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- لوحة المشرف -->
+    <section class="card hidden" id="adminPanel">
+      <h2>🛠️ لوحة المشرف</h2>
+
+      <div class="admin-block">
+        <h3>إعداد عنوان محفظة الاستلام</h3>
+        <input type="text" id="adminWalletInput" placeholder="USDT-TRC20 address">
+        <button class="btn btn-primary" id="saveWallet">حفظ العنوان (يُنشأ QR تلقائياً)</button>
+      </div>
+
+      <div class="admin-block">
+        <h3>إضافة مستخدم</h3>
+        <input type="text" id="newUserName" placeholder="اسم المستخدم">
+        <input type="text" id="newUserEmail" placeholder="البريد الإلكتروني">
+        <input type="text" id="newUserNumber" placeholder="رقم المستخدم">
+        <input type="password" id="newUserPass" placeholder="كلمة المرور">
+        <button class="btn btn-primary" id="addUser">إضافة مستخدم + إنشاء QR</button>
+      </div>
+
+      <div class="admin-block">
+        <h3>طلبات الشحن المعلقة</h3>
+        <table class="table" id="requestsTable">
+          <thead><tr><th>الرقم</th><th>الاسم</th><th>المبلغ</th><th>إجراء</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="admin-block no-border">
+        <h3>المستخدمون</h3>
+        <table class="table" id="usersTable">
+          <thead><tr><th>الرقم</th><th>الاسم</th><th>البريد</th><th>الرصيد</th><th>QR</th><th>تحميل</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+/* =====================================================
+   1) الإعدادات — ضع مفاتيح JSONBin هنا
+===================================================== */
+const JSONBIN_CONFIG = {
+  masterKey: "$2a$10$ضع_هنا_الماستر_كي",
+  binId: "ضع_هنا_معرف_البن"
+};
+
+/* =====================================================
+   2) دوال قاعدة البيانات (JSONBin)
+===================================================== */
+async function dbRead() {
+  const res = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_CONFIG.binId}/latest`, {
+    headers: { 'X-Master-Key': JSONBIN_CONFIG.masterKey }
+  });
+  if (!res.ok) throw new Error('فشل الاتصال بقاعدة البيانات');
+  const json = await res.json();
+  return json.record;
+}
+
+async function dbWrite(data) {
+  const res = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_CONFIG.binId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Master-Key': JSONBIN_CONFIG.masterKey
+    },
+    body: JSON.stringify(data)
+  });
+  return res.ok;
+}
+
+async function hashPass(pass) {
+  const data = new TextEncoder().encode(pass);
+  const buf = await crypto.subtle.digest('SHA-256', data);
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function makeToken() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxx-xxxx-xxxx'.replace(/x/g, () =>
+    Math.floor(Math.random() * 16).toString(16));
+}
+
+/* =====================================================
+   3) أدوات مساعدة
+===================================================== */
+const $ = id => document.getElementById(id);
+
+function showMsg(el, text, type = 'error') {
+  el.textContent = text;
+  el.className = 'msg ' + type;
+  setTimeout(() => el.classList.add('hidden'), 5000);
+}
+
+function renderQR(el, text, size) {
+  el.innerHTML = '';
+  new QRCode(el, { text, width: size, height: size, correctLevel: QRCode.CorrectLevel.H });
+}
+
+function downloadQR(canvas, filename) {
+  const link = document.createElement('a');
+  link.download = filename;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+function saveSessionTemp(user) {
+  localStorage.setItem('temp_session', JSON.stringify({
+    uid: user.id, email: user.email, name: user.name,
+    userNumber: user.number, role: user.role,
+    expiry: Date.now() + 60 * 60 * 1000
+  }));
+}
+
+function logout() {
+  localStorage.removeItem('temp_session');
+  location.reload();
+}
+
+function enterDashboard() {
+  $('authPage').classList.add('hidden');
+  $('dashboardPage').classList.remove('hidden');
+  loadDashboard();
+}
+
+/* =====================================================
+   4) الجلسة المحلية المؤقتة (ساعة)
+===================================================== */
+let session = JSON.parse(localStorage.getItem('temp_session') || 'null');
+
+/* =====================================================
+   5) تسجيل الدخول بالبريد
+===================================================== */
+$('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = $('loginBtn');
+  btn.disabled = true;
+  btn.textContent = 'جارٍ التحقق...';
+  try {
+    const db = await dbRead();
+    const email = $('email').value.trim().toLowerCase();
+    const hash = await hashPass($('password').value);
+
+    const user = (db.users || []).find(u => u.email.toLowerCase() === email);
+    if (!user || user.pass_hash !== hash) {
+      throw new Error('بيانات الدخول غير صحيحة');
+    }
+    saveSessionTemp(user);
+    session = JSON.parse(localStorage.getItem('temp_session'));
+    enterDashboard();
+  } catch (err) {
+    showMsg($('msg'), err.message);
+    btn.disabled = false;
+    btn.textContent = 'تسجيل الدخول';
+  }
+});
+
+/* =====================================================
+   6) تسجيل الدخول عبر QR (رفع صورة)
+===================================================== */
+$('qrLoginBtn').addEventListener('click', () => {
+  $('qrUploadArea').classList.toggle('hidden');
+});
+
+$('qrFile').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const img = new Image();
+  img.onload = () => {
+    const canvas = $('qrCanvas');
+    canvas.classList.remove('hidden');
+    const ctx = canvas.getContext('2d');
+    canvas.width = img.width;
+    canvas.height = img.height;
+    ctx.drawImage(img, 0, 0);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const code = jsQR(imageData.data, canvas.width, canvas.height);
+    if (code && code.data) handleQrLogin(code.data);
+    else showMsg($('msg'), 'لم يتم العثور على QR صالح في الصورة');
+  };
+  img.src = URL.createObjectURL(file);
+});
+
+async function handleQrLogin(data) {
+  try {
+    const payload = JSON.parse(data);
+    if (payload.type !== 'wallet-login' || !payload.token) {
+      throw new Error('نوع QR غير صالح');
+    }
+    const db = await dbRead();
+    const tokenData = (db.qr_tokens || {})[payload.token];
+    if (!tokenData || !tokenData.active) {
+      throw new Error('QR منتهي الصلاحية أو مستخدم مسبقاً');
+    }
+    const user = (db.users || []).find(u => u.number === tokenData.number);
+    if (!user) throw new Error('المستخدم غير موجود');
+
+    // تعطيل التوكن بعد الاستخدام (مرة واحدة)
+    tokenData.active = false;
+    tokenData.usedAt = Date.now();
+    await dbWrite(db);
+
+    saveSessionTemp(user);
+    session = JSON.parse(localStorage.getItem('temp_session'));
+    showMsg($('msg'), 'تم الدخول بنجاح! جارٍ التحويل...', 'success');
+    setTimeout(enterDashboard, 800);
+  } catch (err) {
+    showMsg($('msg'), 'فشل الدخول عبر QR: ' + err.message);
+  }
+}
+
+/* =====================================================
+   7) تحميل اللوحة
+===================================================== */
+async function loadDashboard() {
+  try {
+    const db = await dbRead();
+    const user = (db.users || []).find(u => u.id === session.uid);
+    if (!user) return logout();
+
+    $('uName').textContent = user.name;
+    $('uNumber').textContent = user.number;
+    $('uBalance').textContent = user.balance ?? 0;
+    $('navUser').textContent = user.name + ' (' + user.number + ')';
+
+    const isAdmin = user.role === 'admin';
+    if (isAdmin) {
+      $('adminPanel').classList.remove('hidden');
+      $('adminWalletInput').value = (db.settings?.wallet?.address) || '';
+      renderUsersTable(db);
+      renderRequestsTable(db);
+    }
+
+    // QR الشخصي بجانب رقم المستخدم
+    renderQR($('myQR'), JSON.stringify({
+      type: 'wallet-login', token: user.qr_token,
+      number: user.number, name: user.name
+    }), 160);
+
+    $('downloadQR').onclick = () =>
+      downloadQR(document.querySelector('#myQR canvas'),
+        `QR_${user.number}_${user.name}.png`);
+
+    // عنوان المحفظة + QR تلقائي في قائمة الشحن
+    const addr = (db.settings?.wallet?.address) || '';
+    $('walletAddress').value = addr;
+    const qrEl = $('walletQR');
+    if (addr) renderQR(qrEl, addr, 160);
+    else qrEl.textContent = 'لم يُضبط عنوان المحفظة بعد';
+
+  } catch (err) {
+    alert('خطأ في تحميل البيانات: ' + err.message);
+  }
+}
+
+/* =====================================================
+   8) نسخ العنوان + طلب شحن رصيد
+===================================================== */
+$('copyWallet').addEventListener('click', () => {
+  navigator.clipboard.writeText($('walletAddress').value);
+  alert('تم نسخ العنوان ✓');
+});
+
+$('requestCharge').addEventListener('click', async () => {
+  const amount = parseFloat($('amount').value);
+  const msgEl = $('chargeMsg');
+  if (!amount || amount <= 0) {
+    showMsg(msgEl, 'أدخل مبلغاً صحيحاً');
+    return;
+  }
+  const db = await dbRead();
+  db.charge_requests = db.charge_requests || [];
+  db.charge_requests.push({
+    id: makeToken(),
+    uid: session.uid, number: session.userNumber, name: session.name,
+    amount, status: 'pending', createdAt: Date.now()
+  });
+  if (await dbWrite(db)) {
+    showMsg(msgEl, 'تم إرسال طلب الشحن للمشرف ✓', 'success');
+    $('amount').value = '';
+  } else {
+    showMsg(msgEl, 'فشل الإرسال، حاول مجدداً');
+  }
+});
+
+/* =====================================================
+   9) لوحة المشرف
+===================================================== */
+
+// حفظ عنوان المحفظة → QR ينشأ تلقائياً
+$('saveWallet').addEventListener('click', async () => {
+  const addr = $('adminWalletInput').value.trim();
+  const db = await dbRead();
+  db.settings = db.settings || {};
+  db.settings.wallet = { address: addr };
+  if (await dbWrite(db)) {
+    alert('تم الحفظ — QR محدّث في قائمة الشحن ✓');
+    loadDashboard();
+  } else alert('فشل الحفظ');
+});
+
+// إضافة مستخدم + إنشاء توكن QR
+$('addUser').addEventListener('click', async () => {
+  const name = $('newUserName').value.trim();
+  const email = $('newUserEmail').value.trim();
+  const number = $('newUserNumber').value.trim();
+  const pass = $('newUserPass').value;
+  if (!name || !email || !number || !pass) return alert('أكمل جميع الحقول');
+
+  const db = await dbRead();
+  db.users = db.users || [];
+  if (db.users.some(u => u.email.toLowerCase() === email.toLowerCase()))
+    return alert('البريد مستخدم مسبقاً');
+  if (db.users.some(u => String(u.number) === number))
+    return alert('رقم المستخدم مستخدم مسبقاً');
+
+  const token = makeToken();
+  db.users.push({
+    id: makeToken(),
+    name, email, number,
+    pass_hash: await hashPass(pass),
+    balance: 0, role: 'user',
+    qr_token: token, createdAt: Date.now()
+  });
+  db.qr_tokens = db.qr_tokens || {};
+  db.qr_tokens[token] = { number, active: true, createdAt: Date.now() };
+
+  if (await dbWrite(db)) {
+    alert('أُضيف المستخدم وتم إنشاء QR ✓');
+    ['newUserName','newUserEmail','newUserNumber','newUserPass']
+      .forEach(id => $(id).value = '');
+    loadDashboard();
+  } else alert('فشل الحفظ');
+});
+
+// جدول المستخدمين مع QR بجانب رقم كل مستخدم
+function renderUsersTable(db) {
+  const tbody = document.querySelector('#usersTable tbody');
+  tbody.innerHTML = '';
+  (db.users || []).forEach(user => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${user.number}</td><td>${user.name}</td>
+      <td>${user.email}</td><td>${user.balance}</td>`;
+    const tdQr = document.createElement('td');
+    const div = document.createElement('div');
+    div.className = 'qr-mini';
+    tdQr.appendChild(div);
+    tr.appendChild(tdQr);
+
+    const tdDl = document.createElement('td');
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-secondary btn-sm';
+    btn.textContent = '⬇️';
+    btn.onclick = () =>
+      downloadQR(div.querySelector('canvas'), `QR_${user.number}_${user.name}.png`);
+    tdDl.appendChild(btn);
+    tr.appendChild(tdDl);
+
+    tbody.appendChild(tr);
+    renderQR(div, JSON.stringify({
+      type: 'wallet-login', token: user.qr_token,
+      number: user.number, name: user.name
+    }), 60);
+  });
+}
+
+// طلبات الشحن: موافقة → زيادة الرصيد / رفض
+function renderRequestsTable(db) {
+  const tbody = document.querySelector('#requestsTable tbody');
+  tbody.innerHTML = '';
+  const pending = (db.charge_requests || []).filter(r => r.status === 'pending');
+  if (!pending.length) {
+    tbody.innerHTML = '<tr><td colspan="4">لا توجد طلبات معلقة</td></tr>';
+    return;
+  }
+  pending.forEach(req => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${req.number}</td><td>${req.name}</td><td>${req.amount}$</td>`;
+    const tdAct = document.createElement('td');
+
+    const okBtn = document.createElement('button');
+    okBtn.className = 'btn btn-primary btn-sm';
+    okBtn.textContent = '✓ موافقة';
+    okBtn.onclick = async () => {
+      const fresh = await dbRead();
+      const u = fresh.users.find(x => x.id === req.uid);
+      if (u) u.balance = (u.balance || 0) + req.amount;
+      const r = (fresh.charge_requests || []).find(x => x.id === req.id);
+      if (r) r.status = 'approved';
+      if (await dbWrite(fresh)) { alert('تمت الموافقة وزيادة الرصيد ✓'); loadDashboard(); }
+      else alert('فشل الحفظ');
+    };
+
+    const noBtn = document.createElement('button');
+    noBtn.className = 'btn btn-danger btn-sm';
+    noBtn.textContent = '✗ رفض';
+    noBtn.onclick = async () => {
+      const fresh = await dbRead();
+      const r = (fresh.charge_requests || []).find(x => x.id === req.id);
+      if (r) r.status = 'rejected';
+      if (await dbWrite(fresh)) { alert('تم الرفض'); loadDashboard(); }
+      else alert('فشل الحفظ');
+    };
+
+    tdAct.append(okBtn, ' ', noBtn);
+    tr.appendChild(tdAct);
+    tbody.appendChild(tr);
+  });
+}
+
+/* =====================================================
+   10) الإقلاع: إذا وُجدت جلسة صالحة → اللوحة مباشرة
+===================================================== */
+if (session && session.expiry >= Date.now()) {
+  session.expiry = Date.now() + 60 * 60 * 1000;
+  localStorage.setItem('temp_session', JSON.stringify(session));
+  enterDashboard();
+}
+</script>
+</body>
+</html>
