@@ -272,7 +272,7 @@ function renderAuth(){
         <input type="file" accept="image/*" class="hidden" onchange="scanImageFile(this)">
         <div class="text-3xl mb-1">🖼️</div>
         <span class="text-sm text-gray-300 font-bold">رفع صورة رمز QR</span>
-        <p class="text-xs text-gray-500 mt-1">من ملف كرت حسابك</p>
+        <p class="text-xs text-gray-500 mt-1">صورة QR التي حمّلتها من لوحة حسابك</p>
       </label>
       <div id="qr-reader" class="hidden"></div>
     </div>`;
@@ -347,16 +347,36 @@ function startScanner(){
     toast('❌ القارئ غير مدعوم في هذا المتصفح — استخدم رفع صورة QR','err');
   }
 }
+// معالجة الصورة قبل المسح: تكبير + هامش أبيض لتحسين نسبة نجاح القراءة
 function scanImageFile(input){
   const file=input.files[0]; if(!file) return;
-  try{
-    const h5=new Html5Qrcode('qr-reader');
-    h5.scanFile(file,false).then(txt=>qrLogin(txt))
-      .catch(()=>toast('❌ لم يتم العثور على QR صالح في الصورة','err'));
-  }catch(err){
-    console.error('File scan error:',err);
-    toast('❌ تعذر قراءة الصورة','err');
-  }
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const img=new Image();
+    img.onload=()=>{
+      try{
+        const PAD=80, target=Math.max(img.width,img.height,400);
+        const c=document.createElement('canvas');
+        c.width=target+PAD*2; c.height=target+PAD*2;
+        const ctx=c.getContext('2d');
+        ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,c.width,c.height);
+        ctx.drawImage(img,PAD,PAD,target,target);
+        c.toBlob(blob=>{
+          if(!blob) return toast('❌ تعذر معالجة الصورة','err');
+          const h5=new Html5Qrcode('qr-reader');
+          h5.scanFile(new File([blob],'qr.png',{type:'image/png'}),false)
+            .then(txt=>qrLogin(txt))
+            .catch(()=>toast('❌ لم يتم العثور على QR صالح في الصورة — جرّب إعادة تحميل QR من لوحة حسابك','err'));
+        },'image/png');
+      }catch(err){
+        console.error('File scan error:',err);
+        toast('❌ تعذر معالجة الصورة','err');
+      }
+    };
+    img.onerror=()=>toast('❌ تعذر قراءة الصورة','err');
+    img.src=reader.result;
+  };
+  reader.readAsDataURL(file);
 }
 async function qrLogin(token){
   stopScanner();
@@ -527,17 +547,23 @@ function renderDash(){
   </section>`;
   $('qrBox').innerHTML='';
   try{
-    new QRCode($('qrBox'),{text:u.qrToken,width:170,height:170,colorDark:'#0a0a0f',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.H});
+    new QRCode($('qrBox'),{text:u.qrToken,width:220,height:220,colorDark:'#0a0a0f',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.H});
   }catch(err){
     console.error('QR error:',err);
     $('qrBox').innerHTML='<p class="text-red-600 text-xs p-4">تعذر توليد QR — تحقق من الاتصال بمكتبة qrcode</p>';
   }
 }
+// تحميل QR بحجم كبير مع هامش أبيض (quiet zone) لضمان سهولة قراءته لاحقاً
 function downloadQR(){
-  const canvas=$('qrBox').querySelector('canvas');
-  if(!canvas) return toast('❌ لم يتم توليد QR بعد','err');
+  const src=$('qrBox').querySelector('canvas');
+  if(!src) return toast('❌ لم يتم توليد QR بعد','err');
+  const PAD=60, out=document.createElement('canvas');
+  out.width=src.width+PAD*2; out.height=src.height+PAD*2;
+  const ctx=out.getContext('2d');
+  ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,out.width,out.height);
+  ctx.drawImage(src,PAD,PAD);
   const a=document.createElement('a');
-  a.href=canvas.toDataURL('image/png');
+  a.href=out.toDataURL('image/png');
   a.download='uc-store-qr-'+currentUser.id+'.png';
   a.click();
   toast('⬇️ تم تحميل رمز QR — احفظه لتسجيل الدخول السريع');
