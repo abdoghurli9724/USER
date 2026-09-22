@@ -20,7 +20,7 @@
     GET  /api/auth/me         -> بيانات المستخدم من JWT
     POST /api/orders          -> إنشاء طلب
     GET  /api/orders/:userId  -> سجل الطلبات
-  مكتبات مقترحة للإنتاج: qrcode (توليد)، html5-qrcode (مسح)، jsonwebtoken، bcrypt
+  مكتبات الإنتاج: qrcode، html5-qrcode، jsonwebtoken، bcrypt
 ═══════════════════════════════════════════════════════════════════
 -->
 <html lang="ar" dir="rtl">
@@ -103,10 +103,15 @@ tailwind.config = {
 </footer>
 
 <script>
-/* ══════════════════════ طبقة "قاعدة البيانات" (localStorage) ══════════════════════ */
+/* ══════════════════════ طبقة "قاعدة البيانات" (localStorage) — محصّنة ══════════════════════ */
 const DB = {
-  read:(k)=>JSON.parse(localStorage.getItem(k)||'[]'),
-  write:(k,v)=>localStorage.setItem(k,JSON.stringify(v))
+  read:(k)=>{
+    try{
+      const v=JSON.parse(localStorage.getItem(k)||'[]');
+      return Array.isArray(v)?v:[];   // أي بيانات تالفة/كائن => مصفوفة فارغة
+    }catch{ return []; }
+  },
+  write:(k,v)=>localStorage.setItem(k,JSON.stringify(Array.isArray(v)?v:[]))
 };
 function seedPackages(){
   if(localStorage.getItem('packages')) return;
@@ -182,6 +187,7 @@ async function checkPassword(pw,salt,hash){
 /* ══════════════════════ أدوات مساعدة ══════════════════════ */
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function uid(prefix){ return prefix+'_'+(crypto.randomUUID?crypto.randomUUID().slice(0,8):Date.now().toString(36)+Math.random().toString(36).slice(2,6)); }
 function toast(msg,type='ok'){
   const t=document.createElement('div');
   t.className=`toast glass rounded-xl p-4 text-sm font-semibold border-r-4 ${type==='ok'?'border-yellow-400':'border-red-500'}`;
@@ -193,7 +199,12 @@ function openModal(html){ $('modalBody').innerHTML=html; $('modal').classList.re
 
 let currentUser=null;
 try{ currentUser=JSON.parse(sessionStorage.getItem('session')||'null'); }catch{}
-function saveSession(u){ currentUser=u; u?sessionStorage.setItem('session',JSON.stringify(u)):sessionStorage.removeItem('session'); renderNav(); go(u?'home':'auth'); }
+function saveSession(u){
+  currentUser=u;
+  u?sessionStorage.setItem('session',JSON.stringify(u)):sessionStorage.removeItem('session');
+  renderNav();
+  go(u?'home':'auth');
+}
 
 /* ══════════════════════ التنقل والهيدر ══════════════════════ */
 function renderNav(){
@@ -205,8 +216,8 @@ function renderNav(){
 function logout(){ saveSession(null); toast('تم تسجيل الخروج بنجاح 👋'); }
 function go(page){
   stopScanner();
-  if(!currentUser && page!=='auth' && page!=='home'){ page='auth'; toast('سجّل دخولك أولاً للوصول لهذه الصفحة','err'); }
-  ({home:renderHome, shop:renderShop, auth:renderAuth, dash:renderDash, forgot:renderForgot}[page])();
+  if(!currentUser && page!=='auth' && page!=='home' && page!=='forgot'){ page='auth'; toast('سجّل دخولك أولاً للوصول لهذه الصفحة','err'); }
+  ({home:renderHome, shop:renderShop, auth:renderAuth, dash:renderDash, forgot:renderForgot}[page]||renderHome)();
   window.scrollTo({top:0,behavior:'smooth'});
 }
 
@@ -225,7 +236,7 @@ function renderAuth(){
       </div>
       <div class="grid grid-cols-3 gap-1 mb-6 bg-night-700 rounded-xl p-1">
         ${[['login','تسجيل دخول'],['signup','حساب جديد'],['qr','دخول بـ QR']].map(([k,l])=>
-          `<button onclick="authTab='${k}';renderAuth()" class="py-2 rounded-lg text-xs sm:text-sm font-bold transition ${authTab===k?'btn-gold':'text-gray-400 hover:text-white'}">${l}</button>`).join('')}
+          `<button type="button" onclick="authTab='${k}';renderAuth()" class="py-2 rounded-lg text-xs sm:text-sm font-bold transition ${authTab===k?'btn-gold':'text-gray-400 hover:text-white'}">${l}</button>`).join('')}
       </div>
       <div id="authForm"></div>
     </div>
@@ -255,7 +266,7 @@ function renderAuth(){
     </form>`;
   else f.innerHTML=`
     <div class="space-y-4">
-      <button onclick="startScanner()" id="btnCam" class="btn-gold w-full py-3.5 rounded-xl text-lg">📷 فتح الكاميرا للمسح</button>
+      <button type="button" onclick="startScanner()" class="btn-gold w-full py-3.5 rounded-xl text-lg">📷 فتح الكاميرا للمسح</button>
       <div class="text-center text-gray-500 text-xs">— أو —</div>
       <label class="block border-2 border-dashed border-yellow-500/40 rounded-xl p-6 text-center cursor-pointer hover:border-yellow-500 transition">
         <input type="file" accept="image/*" class="hidden" onchange="scanImageFile(this)">
@@ -294,7 +305,7 @@ async function doSignup(e){
     if(users.some(u=>u.email===mail)) return toast('❌ البريد الإلكتروني مسجل مسبقاً','err');
     if(users.some(u=>u.phone===digits)) return toast('❌ رقم الهاتف مسجل مسبقاً','err');
     const {salt,hash}=await hashPassword(pw);
-    const id='u_'+(crypto.randomUUID?crypto.randomUUID().slice(0,8):Date.now().toString(36));
+    const id=uid('u');
     // توكن QR فريد مرتبط بحساب المستخدم — JWT بصلاحية سنة
     const qrToken=await signJWT({sub:id,typ:'QR_LOGIN',exp:Date.now()+365*24*3600e3});
     const user={id,fullName:name,email:mail,phone:digits,salt,passwordHash:hash,qrToken,createdAt:Date.now()};
@@ -323,19 +334,29 @@ function renderForgot(){
 
 /* ══════════════════════ تسجيل الدخول عبر QR ══════════════════════ */
 let scanner=null;
-function stopScanner(){ if(scanner){scanner.stop().catch(()=>{});scanner.clear();scanner=null;} }
+function stopScanner(){ if(scanner){try{scanner.stop().catch(()=>{});scanner.clear();}catch{} scanner=null;} }
 function startScanner(){
   const el=$('qr-reader'); el.classList.remove('hidden');
-  scanner=new Html5Qrcode('qr-reader');
-  scanner.start({facingMode:'environment'},{fps:10,qrbox:230},
-    txt=>qrLogin(txt), ()=>{}
-  ).catch(()=>toast('❌ تعذر فتح الكاميرا — تأكد من الصلاحيات أو ارفع صورة','err'));
+  try{
+    scanner=new Html5Qrcode('qr-reader');
+    scanner.start({facingMode:'environment'},{fps:10,qrbox:230},
+      txt=>qrLogin(txt), ()=>{}
+    ).catch(()=>toast('❌ تعذر فتح الكاميرا — تأكد من الصلاحيات أو ارفع صورة','err'));
+  }catch(err){
+    console.error('Scanner error:',err);
+    toast('❌ القارئ غير مدعوم في هذا المتصفح — استخدم رفع صورة QR','err');
+  }
 }
 function scanImageFile(input){
   const file=input.files[0]; if(!file) return;
-  const h5=new Html5Qrcode('qr-reader');
-  h5.scanFile(file,false).then(txt=>qrLogin(txt))
-    .catch(()=>toast('❌ لم يتم العثور على QR صالح في الصورة','err'));
+  try{
+    const h5=new Html5Qrcode('qr-reader');
+    h5.scanFile(file,false).then(txt=>qrLogin(txt))
+      .catch(()=>toast('❌ لم يتم العثور على QR صالح في الصورة','err'));
+  }catch(err){
+    console.error('File scan error:',err);
+    toast('❌ تعذر قراءة الصورة','err');
+  }
 }
 async function qrLogin(token){
   stopScanner();
@@ -416,6 +437,7 @@ function renderPackageCards(el,pkgs){
 }
 function openCheckout(pid){
   const p=DB.read('packages').find(x=>x.id===pid);
+  if(!p) return toast('❌ الحزمة غير موجودة','err');
   openModal(`
     <h2 class="text-xl font-black gold-text mb-1">شراء ${p.uc} UC</h2>
     <p class="text-gray-400 text-sm mb-5">السعر: <span class="text-yellow-400 font-bold">${p.price}</span> ${p.bonus?`| بونص <span class="text-yellow-400">${p.bonus}</span>`:''}</p>
@@ -442,11 +464,11 @@ function submitOrder(e,pid){
   e.preventDefault();
   try{
     const p=DB.read('packages').find(x=>x.id===pid);
+    if(!p) return toast('❌ الحزمة غير موجودة','err');
     const playerId=$('pl_id').value.trim();
     if(playerId.length<6||playerId.length>14) return toast('❌ آيدي اللاعب غير صالح','err');
     const orders=DB.read('orders');
-    const order={id:'o_'+(crypto.randomUUID?crypto.randomUUID().slice(0,8):Date.now().toString(36)),
-      userId:currentUser.id,packageId:pid,uc:p.uc,price:p.price,playerId,
+    const order={id:uid('o'),userId:currentUser.id,packageId:pid,uc:p.uc,price:p.price,playerId,
       paymentMethod:$('pay_m').value,
       receiptName:$('receiptBox').querySelector('input').files[0]?.name||'',
       status:'pending',createdAt:Date.now()};
@@ -464,7 +486,7 @@ function statusBadge(st){
   return {pending:'<span class="text-xs px-3 py-1 rounded-full bg-yellow-500/20 text-yellow-400 font-bold">⏳ قيد الانتظار</span>',
           shipped:'<span class="text-xs px-3 py-1 rounded-full bg-blue-500/20 text-blue-400 font-bold">🚚 تم الشحن</span>',
           completed:'<span class="text-xs px-3 py-1 rounded-full bg-green-500/20 text-green-400 font-bold">✅ مكتملة</span>',
-          cancelled:'<span class="text-xs px-3 py-1 rounded-full bg-red-500/20 text-red-400 font-bold">❌ ملغاة</span>'}[st];
+          cancelled:'<span class="text-xs px-3 py-1 rounded-full bg-red-500/20 text-red-400 font-bold">❌ ملغاة</span>'}[st]||'';
 }
 function renderDash(){
   const u=DB.read('users').find(x=>x.id===currentUser.id);
@@ -481,7 +503,7 @@ function renderDash(){
       <div class="bg-white rounded-2xl p-4 inline-block mb-3" id="qrBox"></div>
       <p class="text-xs text-gray-500 mb-3">امسح هذا الرمز للدخول بدون كلمة سر</p>
       <button onclick="downloadQR()" class="btn-gold w-full py-2.5 rounded-xl text-sm mb-2">⬇️ تحميل QR كصورة</button>
-      <button onclick="copyToken('${u.qrToken}')" class="w-full py-2.5 rounded-xl bg-night-600 hover:bg-night-500 text-sm font-bold text-gray-300">📋 نسخ رمز QR Token</button>
+      <button onclick="copyToken()" class="w-full py-2.5 rounded-xl bg-night-600 hover:bg-night-500 text-sm font-bold text-gray-300">📋 نسخ رمز QR Token</button>
       <div class="mt-3 text-xs text-gray-600 font-mono break-all">ID: ${u.id}</div>
     </div>
     <!-- الطلبات -->
@@ -504,7 +526,12 @@ function renderDash(){
     </div>
   </section>`;
   $('qrBox').innerHTML='';
-  new QRCode($('qrBox'),{text:u.qrToken,width:170,height:170,colorDark:'#0a0a0f',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.H});
+  try{
+    new QRCode($('qrBox'),{text:u.qrToken,width:170,height:170,colorDark:'#0a0a0f',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.H});
+  }catch(err){
+    console.error('QR error:',err);
+    $('qrBox').innerHTML='<p class="text-red-600 text-xs p-4">تعذر توليد QR — تحقق من الاتصال بمكتبة qrcode</p>';
+  }
 }
 function downloadQR(){
   const canvas=$('qrBox').querySelector('canvas');
@@ -515,7 +542,10 @@ function downloadQR(){
   a.click();
   toast('⬇️ تم تحميل رمز QR — احفظه لتسجيل الدخول السريع');
 }
-function copyToken(t){ navigator.clipboard.writeText(t).then(()=>toast('📋 تم نسخ التوكن')); }
+function copyToken(){
+  const u=DB.read('users').find(x=>x.id===currentUser.id);
+  navigator.clipboard.writeText(u.qrToken).then(()=>toast('📋 تم نسخ التوكن'));
+}
 
 /* ══════════════════════ نظام الإشعارات + محاكاة تغيّر الحالة (Demo) ══════════════════════ */
 function notifyStatusChange(orderId,newStatus){
