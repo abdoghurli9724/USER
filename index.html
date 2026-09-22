@@ -1,430 +1,492 @@
 <!DOCTYPE html>
+<!--
+═══════════════════════════════════════════════════════════════════
+  UC STORE — متجر شحن ببجي (PUBG Mobile UC) — ملف واحد كامل
+═══════════════════════════════════════════════════════════════════
+  بنية قاعدة البيانات (Schema) — نفس البنية تُنقل إلى MongoDB/PostgreSQL:
+
+  Users: {
+    _id, fullName, email (unique), phone, passwordHash, salt,
+    qrToken (JWT signed, unique), createdAt
+  }
+  Packages: { _id, name, ucAmount, price, badge, bonus, logo, active }
+  Orders:   { _id, userId, packageId, playerId, paymentMethod,
+              receiptName, status: pending|shipped|completed|cancelled, createdAt }
+
+  نقاط API المقابلة عند نقلها إلى Backend (Express/FastAPI):
+    POST /api/auth/register   -> إنشاء حساب + توليد QR Token
+    POST /api/auth/login      -> email/phone + password
+    POST /api/auth/qr-login   -> إرسال qrToken للتحقق من التوقيع (JWT)
+    GET  /api/auth/me         -> بيانات المستخدم من JWT
+    POST /api/orders          -> إنشاء طلب
+    GET  /api/orders/:userId  -> سجل الطلبات
+  مكتبات مقترحة للإنتاج: qrcode (توليد)، html5-qrcode (مسح)، jsonwebtoken، bcrypt
+═══════════════════════════════════════════════════════════════════
+-->
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>UC Store | شحن ببجي فوري</title>
+<title>UC STORE — شحن شدات ببجي بسرعة الضوء</title>
 <script src="https://cdn.tailwindcss.com"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 tailwind.config = {
   theme: { extend: {
-    colors: { night: "#0a0a0f", panel: "#14141c", gold: "#f5c542", neon: "#38bdf8" },
-    boxShadow: { glow: "0 0 20px rgba(245,197,66,.35)", neonG: "0 0 25px rgba(56,189,248,.25)" },
-    fontFamily: { display: ["Cairo", "sans-serif"] },
+    colors: {
+      night:  { 900:'#0a0a0f', 800:'#12121a', 700:'#1a1a26', 600:'#242433' },
+      gold:   { 400:'#ffd75e', 500:'#f5c542', 600:'#d4a017' },
+      neon:   '#3ba9ff'
+    },
+    fontFamily: { cairo: ['Cairo','sans-serif'] }
   }}
 }
 </script>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
 <style>
-  body { background-image:
-    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(56,189,248,.12), transparent),
-    radial-gradient(ellipse 60% 40% at 80% 110%, rgba(245,197,66,.08), transparent);
-    background-attachment: fixed; }
-  .glass { background: rgba(20,20,28,.85); backdrop-filter: blur(20px);
-           border: 1px solid rgba(255,255,255,.1); border-radius: 1rem; }
-  .btn-gold { background: linear-gradient(90deg,#f5c542,#f59e0b); color:#000; font-weight:700;
-    border-radius:.75rem; padding:.75rem 1.5rem; transition:all .2s; width:100%; }
-  .btn-gold:hover { box-shadow:0 0 20px rgba(245,197,66,.35); transform:translateY(-2px); }
-  .btn-gold:active { transform:translateY(0); }
-  .btn-gold:disabled { opacity:.5; }
-  .input-dark { width:100%; background:rgba(10,10,15,.7); border:1px solid rgba(255,255,255,.1);
-    border-radius:.75rem; padding:.75rem 1rem; transition:all .2s; }
-  .input-dark:focus { border-color:#f5c542; outline:none; box-shadow:0 0 0 1px rgba(245,197,66,.5); }
-  .fade { animation: fade .4s ease; } @keyframes fade { from{opacity:0;transform:translateY(10px)} to{opacity:1} }
-  .badge { font-size:.7rem; padding:.2rem .7rem; border-radius:9999px; font-weight:700; }
+  * { font-family:'Cairo',sans-serif; }
+  body { background:#0a0a0f; color:#e8e8ef; }
+  .glass { background:rgba(26,26,38,.85); backdrop-filter:blur(14px); border:1px solid rgba(245,197,66,.15); }
+  .gold-text { background:linear-gradient(135deg,#ffd75e,#d4a017); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .btn-gold { background:linear-gradient(135deg,#ffd75e,#d4a017); color:#0a0a0f; font-weight:800; transition:.25s; }
+  .btn-gold:hover { transform:translateY(-2px); box-shadow:0 10px 30px rgba(245,197,66,.35); }
+  .card-hover { transition:.3s; }
+  .card-hover:hover { transform:translateY(-6px); border-color:rgba(245,197,66,.5); box-shadow:0 15px 40px rgba(0,0,0,.6), 0 0 25px rgba(245,197,66,.12); }
+  input,select { background:#12121a; border:1px solid #2a2a3a; color:#fff; }
+  input:focus,select:focus { outline:none; border-color:#f5c542; box-shadow:0 0 0 3px rgba(245,197,66,.15); }
+  .slide { display:none; animation:fade 1s; }
+  .slide.active { display:block; }
+  @keyframes fade { from{opacity:0;transform:scale(.98)} to{opacity:1;transform:scale(1)} }
+  @keyframes glow { 0%,100%{box-shadow:0 0 12px rgba(245,197,66,.3)} 50%{box-shadow:0 0 30px rgba(245,197,66,.6)} }
+  .glow { animation:glow 2.5s infinite; }
+  @keyframes toastIn { from{transform:translateX(120%)} to{transform:translateX(0)} }
+  .toast { animation:toastIn .4s ease; }
+  ::-webkit-scrollbar { width:8px; } ::-webkit-scrollbar-thumb { background:#d4a017; border-radius:8px; }
+  #qr-reader { border:2px dashed #f5c542; border-radius:1rem; overflow:hidden; }
+  #qr-reader video { width:100% !important; }
 </style>
 </head>
-<body class="bg-night text-gray-200 font-display min-h-screen">
+<body class="min-h-screen">
 
-<!-- ══════════ الرأس ══════════ -->
-<header class="sticky top-0 z-40 glass border-x-0 border-t-0 rounded-none">
-  <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-    <div class="flex items-center gap-2 cursor-pointer" onclick="go('home')">
-      <span class="text-2xl">🎮</span>
-      <span class="text-xl font-black text-gold">UC<span class="text-white">STORE</span></span>
-    </div>
-    <nav id="navLinks" class="flex items-center gap-3 text-sm"></nav>
+<!-- ═══════════ الهيدر ═══════════ -->
+<header class="glass sticky top-0 z-40">
+  <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+    <a href="#" onclick="go('home')" class="flex items-center gap-2">
+      <div class="w-10 h-10 rounded-xl btn-gold flex items-center justify-center text-xl font-black">UC</div>
+      <span class="text-2xl font-black gold-text hidden sm:block">UC STORE</span>
+    </a>
+    <nav class="hidden md:flex gap-6 text-sm font-semibold" id="navLinks">
+      <a href="#" onclick="go('home')"  class="hover:text-yellow-400 transition">الرئيسية</a>
+      <a href="#" onclick="go('shop')"  class="hover:text-yellow-400 transition">حزم الشدات</a>
+      <a href="#" onclick="go('dash')"  class="hover:text-yellow-400 transition">حسابي</a>
+    </nav>
+    <div id="authArea" class="flex items-center gap-2"></div>
   </div>
 </header>
 
-<main id="app" class="max-w-6xl mx-auto px-4 py-8"></main>
+<!-- ═══════════ الصفحات ═══════════ -->
+<main id="app"></main>
 
-<div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 px-6 py-3 rounded-xl glass
-     text-sm hidden z-50 shadow-glow"></div>
+<!-- ═══════════ المودالات ═══════════ -->
+<div id="modal" class="fixed inset-0 bg-black/80 z-50 hidden items-center justify-center p-4">
+  <div class="glass rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 relative">
+    <button onclick="closeModal()" class="absolute top-3 left-3 w-9 h-9 rounded-full bg-night-600 hover:bg-red-600/60 font-bold">✕</button>
+    <div id="modalBody"></div>
+  </div>
+</div>
+<div id="toasts" class="fixed top-20 left-4 z-[60] space-y-2 w-80"></div>
 
-<!-- ══════════ المحرك ══════════ -->
+<footer class="border-t border-night-600 mt-16 py-8 text-center text-sm text-gray-500">
+  <p class="gold-text font-bold text-lg mb-1">UC STORE</p>
+  <p>شحن فوري وآمن لشدات ببجي موبايل © 2026 — جميع الحقوق محفوظة</p>
+</footer>
+
 <script>
-/* ───── قاعدة البيانات المحلية (localStorage) ───── */
+/* ══════════════════════ طبقة "قاعدة البيانات" (localStorage) ══════════════════════ */
 const DB = {
-  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
-  set(k, v) { localStorage.setItem(k, JSON.stringify(v)); },
+  read:(k)=>JSON.parse(localStorage.getItem(k)||'[]'),
+  write:(k,v)=>localStorage.setItem(k,JSON.stringify(v))
 };
-let users    = DB.get("uc_users", []);
-let session  = DB.get("uc_session", null);
-let orders   = DB.get("uc_orders", []);
-let notifSeen= DB.get("uc_notif_seen", {});
-
-/* الحزم الافتراضية */
-const PACKAGES = [
-  { id:"p60",   name:"60 UC",    uc:60,   bonus:0,  price:5,  old:6,  icon:"🪙" },
-  { id:"p325",  name:"325 UC",   uc:325,  bonus:25, price:22, old:28, icon:"💰", hot:true },
-  { id:"p660",  name:"660 UC",   uc:660,  bonus:60, price:44, old:55, icon:"💎", hot:true },
-  { id:"p1800", name:"1800 UC",  uc:1800, bonus:180,price:115,old:145, icon:"👑" },
-  { id:"p3850", name:"3850 UC",  uc:3850, bonus:400,price:230,old:290, icon:"🏆" },
-  { id:"p8100", name:"8100 UC",  uc:8100, bonus:900,price:450,old:560, icon:"🔥", best:true },
-];
-
-/* ───── أدوات ───── */
-const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function toast(msg, ok = true) {
-  const t = $("toast");
-  t.textContent = msg;
-  t.className = t.className.replace("hidden", "");
-  t.style.borderColor = ok ? "rgba(245,197,66,.5)" : "rgba(248,113,113,.5)";
-  setTimeout(() => t.classList.add("hidden"), 3000);
-}
-/* توليد توكن عشوائي آمن (256-bit) */
-function randomToken() {
-  const a = new Uint8Array(32);
-  crypto.getRandomValues(a);
-  return [...a].map(b => b.toString(16).padStart(2, "0")).join("");
-}
-async function hashPassword(pw) {
-  const buf = await crypto.subtle.digest("SHA-256",
-    new TextEncoder().encode("ucsalt$" + pw));
-  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
-}
-function currentUser() { return users.find(u => u.id === session); }
-function updateNav() {
-  const u = currentUser();
-  $("navLinks").innerHTML = u
-    ? `<span class="text-gold hidden sm:inline">مرحباً ${esc(u.fullName)}</span>
-       <button onclick="go('dash')" class="text-neon hover:underline">لوحتي</button>
-       <button onclick="logout()" class="text-red-400 hover:underline">خروج</button>`
-    : `<button onclick="go('login')" class="text-neon hover:underline">دخول</button>
-       <button onclick="go('register')" class="btn-gold !py-1.5 !px-4 !w-auto">إنشاء حساب</button>`;
-}
-
-/* ───── الصفحات ───── */
-const pages = {};
-
-/* ═══ الرئيسية ═══ */
-pages.home = () => {
-  const u = currentUser();
-  const u50 = DB.get("uc_u50", 0);
-  $("app").innerHTML = `
-  <div class="fade">
-    <!-- سلايدر -->
-    <div id="slider" class="relative h-56 sm:h-72 rounded-2xl overflow-hidden mb-8 glass border-gold/30">
-      <div id="slides" class="h-full flex transition-transform duration-500"></div>
-      <div id="dots" class="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-2"></div>
-    </div>
-    <h2 class="text-2xl font-black mb-6">🔥 حزم الشدات <span class="text-gold">العروض الحصرية</span></h2>
-    <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
-      ${PACKAGES.map(p => `
-      <div class="glass p-5 text-center hover:-translate-y-1 hover:shadow-glow transition cursor-pointer relative"
-           onclick="${u ? `openCheckout('${p.id}')` : `requireLogin('${p.id}')`}">
-        ${p.hot ? `<span class="badge bg-red-500/90 text-white absolute top-3 right-3">الأكثر مبيعاً</span>` : ""}
-        ${p.best ? `<span class="badge bg-gold text-black absolute top-3 right-3">أفضل قيمة</span>` : ""}
-        <div class="text-4xl mb-2">${p.icon}</div>
-        <div class="text-xl font-black text-gold">${p.name}</div>
-        ${p.bonus ? `<div class="text-xs text-neon mb-1">+${p.bonus} UC إضافية 🎁</div>` : `<div class="mb-1">&nbsp;</div>`}
-        <div class="mt-2">
-          <span class="text-lg font-bold">${p.price}$</span>
-          ${p.old ? `<span class="text-gray-500 line-through text-sm mr-2">${p.old}$</span>` : ""}
-        </div>
-      </div>`).join("")}
-    </div>
-    <div class="grid sm:grid-cols-3 gap-4 mt-10">
-      ${[["⚡","تسليم فوري","شحن تلقائي خلال دقائق"],["🛡️","دفع آمن","تشفير كامل وحماية بيانات"],["💬","دعم 24/7","فريق دعم متواصل دائماً"]]
-      .map(([i,t,d]) => `<div class="glass p-5 text-center"><div class="text-3xl mb-2">${i}</div>
-        <div class="font-bold">${t}</div><div class="text-sm text-gray-400">${d}</div></div>`).join("")}
-    </div>
-  </div>`;
-  initSlider();
-};
-
-/* السلايدر المتحرك */
-function initSlider() {
-  const slides = [
-    { bg: "from-amber-600/30 to-night", t: "خصم 25% على جميع الحزم 🎉", s: "استخدم كود: UC25" },
-    { bg: "from-sky-600/30 to-night", t: "شحن فوري خلال دقائق ⚡", s: "أسرع متجر UC في المنطقة" },
-    { bg: "from-purple-600/30 to-night", t: "حزمة 8100 UC + 900 مجاناً 👑", s: "لفترة محدودة فقط" },
+function seedPackages(){
+  if(localStorage.getItem('packages')) return;
+  const pkgs=[
+    {id:'p60',  name:'شدات 60 UC',   uc:60,   price:'0.99$',  bonus:'',        badge:'',          logo:'🪙'},
+    {id:'p325', name:'شدات 325 UC',  uc:325,  price:'4.99$',  bonus:'+25 UC',  badge:'الأكثر مبيعاً', logo:'💰'},
+    {id:'p660', name:'شدات 660 UC',  uc:660,  price:'9.99$',  bonus:'+60 UC',  badge:'عرض مميز',  logo:'💵'},
+    {id:'p1800',name:'شدات 1800 UC', uc:1800, price:'24.99$', bonus:'+180 UC', badge:'قيمة ذهبية',logo:'👑'},
+    {id:'p3850',name:'شدات 3850 UC', uc:3850, price:'49.99$', bonus:'+400 UC', badge:'الوحش',     logo:'🔥'},
+    {id:'p8100',name:'شدات 8100 UC', uc:8100, price:'99.99$', bonus:'+900 UC', badge:'VIP',       logo:'💎'}
   ];
-  const el = $("slides"), dots = $("dots");
-  el.innerHTML = slides.map(s => `
-    <div class="min-w-full h-full bg-gradient-to-br ${s.bg} flex flex-col items-center justify-center gap-2">
-      <div class="text-2xl sm:text-4xl font-black text-gold text-center px-4">${s.t}</div>
-      <div class="text-gray-300 text-sm sm:text-lg">${s.s}</div>
-    </div>`).join("");
-  dots.innerHTML = slides.map((_, i) =>
-    `<span class="dot w-2.5 h-2.5 rounded-full bg-white/30 cursor-pointer" data-i="${i}"></span>`).join("");
-  let idx = 0;
-  const show = i => {
-    idx = i; el.style.transform = `translateX(${i * 100}%)`; // RTL
-    document.querySelectorAll(".dot").forEach((d, j) =>
-      d.className = `dot w-2.5 h-2.5 rounded-full cursor-pointer ${j === i ? "bg-gold" : "bg-white/30"}`);
-  };
-  document.querySelectorAll(".dot").forEach(d => d.onclick = () => show(+d.dataset.i));
-  show(0);
-  window._sliderTimer && clearInterval(window._sliderTimer);
-  window._sliderTimer = setInterval(() => show((idx + 1) % slides.length), 4000);
+  localStorage.setItem('packages',JSON.stringify(pkgs));
+}
+seedPackages();
+
+/* ══════════════════════ JWT فعلي عبر Web Crypto (HMAC-SHA256) ══════════════════════ */
+const SECRET = 'UC_STORE_SUPER_SECRET_KEY_CHANGE_IN_PRODUCTION';
+const b64u = buf=>btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/=+$/,'').replace(/\+/g,'-').replace(/\//g,'_');
+const b64uJSON = s=>JSON.parse(atob(s.replace(/-/g,'+').replace(/_/g,'/')));
+async function hmac(data){
+  const key = await crypto.subtle.importKey('raw',new TextEncoder().encode(SECRET),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+  return b64u(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(data)));
+}
+// توليد JWT: header.payload.signature
+async function signJWT(payload){
+  const h=b64u(new TextEncoder().encode(JSON.stringify({alg:'HS256',typ:'JWT'})));
+  const p=b64u(new TextEncoder().encode(JSON.stringify({...payload,iat:Date.now()})));
+  return h+'.'+p+'.'+await hmac(h+'.'+p);
+}
+// التحقق من JWT (نفس منطق /api/auth/qr-login)
+async function verifyJWT(token){
+  try{
+    const [h,p,s]=token.split('.');
+    if(await hmac(h+'.'+p)!==s) return null;                 // توقيع خاطئ
+    const payload=b64uJSON(p);
+    if(payload.exp && payload.exp<Date.now()) return null;   // منتهي
+    return payload;
+  }catch{ return null; }
+}
+async function hashPassword(pw){
+  const salt=crypto.getRandomValues(new Uint8Array(16));
+  const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),{name:'PBKDF2'},false,['deriveBits']);
+  const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:100000,hash:'SHA-256'},key,256);
+  return {salt:b64u(salt), hash:b64u(bits)};
+}
+async function checkPassword(pw,salt,hash){
+  const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),{name:'PBKDF2'},false,['deriveBits']);
+  const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt:new Uint8Array(atob(salt.replace(/-/g,'+').replace(/_/g,'/')).split('').map(c=>c.charCodeAt(0))),iterations:100000,hash:'SHA-256'},key,256);
+  return b64u(bits)===hash;
 }
 
-/* ═══ تسجيل الدخول ═══ */
-pages.login = () => {
-  $("app").innerHTML = `
-  <div class="fade max-w-md mx-auto glass p-8 shadow-neonG">
-    <h1 class="text-3xl font-black text-gold text-center mb-1">تسجيل الدخول</h1>
-    <p class="text-center text-gray-400 mb-6 text-sm">متجر شحن ببجي UC الأسرع والأأمن</p>
-    <form id="loginForm" class="space-y-4">
-      <input id="li_id" class="input-dark" placeholder="البريد الإلكتروني أو رقم الهاتف" required>
-      <input id="li_pw" class="input-dark" type="password" placeholder="كلمة السر" required>
-      <div class="flex justify-between text-sm">
-        <a href="#" onclick="toast('ستصلك رسالة لإعادة تعيين كلمة السر 📧');return false" class="text-neon hover:underline">نسيت كلمة السر؟</a>
-        <a href="#" onclick="go('register');return false" class="text-gold hover:underline">إنشاء حساب جديد</a>
+/* ══════════════════════ أدوات مساعدة ══════════════════════ */
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function toast(msg,type='ok'){
+  const t=document.createElement('div');
+  t.className=`toast glass rounded-xl p-4 text-sm font-semibold border-r-4 ${type==='ok'?'border-yellow-400':'border-red-500'}`;
+  t.innerHTML=msg; $('toasts').appendChild(t);
+  setTimeout(()=>{t.style.opacity=0;t.style.transition='.5s';setTimeout(()=>t.remove(),500)},4500);
+}
+function closeModal(){ $('modal').classList.add('hidden'); $('modal').classList.remove('flex'); $('modalBody').innerHTML=''; stopScanner(); }
+function openModal(html){ $('modalBody').innerHTML=html; $('modal').classList.remove('hidden'); $('modal').classList.add('flex'); }
+
+let currentUser=null;
+try{ currentUser=JSON.parse(sessionStorage.getItem('session')||'null'); }catch{}
+function saveSession(u){ currentUser=u; u?sessionStorage.setItem('session',JSON.stringify(u)):sessionStorage.removeItem('session'); renderNav(); go(u?'home':'auth'); }
+
+/* ══════════════════════ التنقل والهيدر ══════════════════════ */
+function renderNav(){
+  $('authArea').innerHTML = currentUser
+    ? `<button onclick="go('dash')" class="text-sm font-bold text-yellow-400 hover:text-yellow-200">👤 ${esc(currentUser.fullName.split(' ')[0])}</button>
+       <button onclick="logout()" class="btn-gold px-4 py-1.5 rounded-lg text-sm">خروج</button>`
+    : `<button onclick="go('auth')" class="btn-gold px-5 py-2 rounded-lg text-sm">تسجيل الدخول</button>`;
+}
+function logout(){ saveSession(null); toast('تم تسجيل الخروج بنجاح 👋'); }
+function go(page){
+  stopScanner();
+  if(!currentUser && page!=='auth' && page!=='home'){ page='auth'; toast('سجّل دخولك أولاً للوصول لهذه الصفحة','err'); }
+  ({home:renderHome, shop:renderShop, auth:renderAuth, dash:renderDash, forgot:renderForgot}[page])();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+/* ══════════════════════ صفحة تسجيل الدخول / إنشاء حساب ══════════════════════ */
+let authTab='login';
+function renderAuth(){
+  $('app').innerHTML=`
+  <section class="min-h-[85vh] flex items-center justify-center px-4 py-10 relative overflow-hidden">
+    <div class="absolute -top-32 -right-32 w-96 h-96 bg-yellow-500/10 rounded-full blur-3xl"></div>
+    <div class="absolute -bottom-32 -left-32 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl"></div>
+    <div class="glass rounded-3xl w-full max-w-md p-8 glow relative z-10">
+      <div class="text-center mb-6">
+        <div class="w-16 h-16 mx-auto rounded-2xl btn-gold flex items-center justify-center text-2xl font-black mb-3">UC</div>
+        <h1 class="text-2xl font-black gold-text">مرحباً بك في UC STORE</h1>
+        <p class="text-gray-400 text-sm mt-1">شحن شدات ببجي بسرعة وأمان</p>
       </div>
-      <p id="li_err" class="text-red-400 text-sm text-center hidden"></p>
-      <button class="btn-gold w-full">دخول</button>
-    </form>
-    <div class="flex items-center gap-3 my-6">
-      <hr class="flex-1 border-white/10"><span class="text-gray-500 text-sm">أو</span><hr class="flex-1 border-white/10">
-    </div>
-    <button onclick="startScan()" class="w-full border border-neon/40 text-neon rounded-xl py-3 hover:bg-neon/10 transition">📷 تسجيل الدخول بمسح QR</button>
-    <label class="block mt-3 text-center text-sm text-gray-400 cursor-pointer hover:text-gray-200">
-      أو ارفع صورة QR
-      <input id="qr_file" type="file" accept="image/*" class="hidden">
-    </label>
-    <canvas id="qr_canvas" class="mt-4 mx-auto rounded-xl ${""}" style="display:none"></canvas>
-  </div>`;
-  $("loginForm")?.; // no-op
-  document.querySelector("#li_pw").closest("form").onsubmit = async (e) => {
-    e.preventDefault();
-    const id = $("li_id").value.trim().toLowerCase();
-    const user = users.find(u => u.email === id || u.phone === $("li_id").value.trim());
-    const err = $("li_err");
-    if (!user || (await hashPassword($("li_pw").value)) !== user.pwHash) {
-      err.textContent = "بيانات الدخول غير صحيحة"; err.classList.remove("hidden"); return;
-    }
-    session = user.id; DB.set("uc_session", session); updateNav();
-    toast("تم تسجيل الدخول بنجاح ✅"); go("home");
-  };
-};
-
-/* ─── تسجيل الدخول عبر QR ─── */
-function qrLogin(qrPayload) {
-  const user = users.find(u => u.qrToken === qrPayload);
-  if (!user) return toast("رمز QR غير صالح ❌", false);
-  session = user.id; DB.set("uc_session", session); updateNav();
-  toast(`أهلاً ${user.fullName} 👋`); go("home");
-}
-async function startScan() {
-  const canvas = $("qr_canvas");
-  canvas.style.display = "block";
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-    const video = document.createElement("video");
-    video.srcObject = stream; video.setAttribute("playsinline", ""); video.play();
-    const tick = () => {
-      if (video.readyState === video.HAVE_ENOUGH_DATA) {
-        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-        canvas.getContext("2d").drawImage(video, 0, 0);
-        const img = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height);
-        const code = jsQR(img.data, img.width, img.height);
-        if (code) { stream.getTracks().forEach(t => t.stop()); qrLogin(code.data); return; }
-      }
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  } catch { toast("تعذّر الوصول للكاميرا — استخدم رفع الصورة", false); }
-}
-document.addEventListener("change", async (e) => {
-  if (e.target.id !== "qr_file" || !e.target.files[0]) return;
-  const img = new Image();
-  img.onload = () => {
-    const c = document.createElement("canvas");
-    c.width = img.width; c.height = img.height;
-    c.getContext("2d").drawImage(img, 0, 0);
-    const d = c.getContext("2d").getImageData(0, 0, c.width, c.height);
-    const code = jsQR(d.data, d.width, d.height);
-    code ? qrLogin(code.data) : toast("الصورة لا تحتوي على QR صالح", false);
-  };
-  img.src = URL.createObjectURL(e.target.files[0]);
-});
-
-/* ═══ إنشاء حساب ═══ */
-pages.register = () => {
-  $("app").innerHTML = `
-  <div class="fade max-w-md mx-auto glass p-8">
-    <h1 class="text-3xl font-black text-gold text-center mb-6">إنشاء حساب</h1>
-    <form id="regForm" class="space-y-4">
-      <input id="rg_name" class="input-dark" placeholder="الاسم الكامل" required>
-      <input id="rg_email" class="input-dark" type="email" placeholder="البريد الإلكتروني" required>
-      <input id="rg_phone" class="input-dark" placeholder="رقم الهاتف" required>
-      <input id="rg_pw" class="input-dark" type="password" placeholder="كلمة السر (8 أحرف على الأقل)" minlength="8" required>
-      <p id="rg_err" class="text-red-400 text-sm text-center hidden"></p>
-      <button class="btn-gold w-full">إنشاء الحساب</button>
-      <p class="text-center text-sm text-gray-400">لديك حساب؟
-        <a href="#" onclick="go('login');return false" class="text-gold hover:underline">تسجيل الدخول</a></p>
-    </form>
-  </div>`;
-  $("regForm").onsubmit = async (e) => {
-    e.preventDefault();
-    const err = $("rg_err");
-    const email = $("rg_email").value.trim().toLowerCase();
-    const phone = $("rg_phone")?.value; const phoneVal = $("rg_phone"); // unused
-    const phoneNum = document.getElementById("rg_phone");
-    const data = {
-      id: "u_" + randomToken().slice(0, 12),
-      fullName: $("rg_name")?.value || document.getElementById("rg_name")?.value,
-    };
-    const fullName = document.getElementById("rg_name").value.trim();
-    const phoneInput = document.getElementById("rg_phone").value.trim();
-    const pw = document.getElementById("rg_pw").value;
-    if (users.some(u => u.email === email || u.phone === phoneInput)) {
-      err.textContent = "البريد أو الهاتف مسجل مسبقاً"; err.classList.remove("hidden"); return;
-    }
-    const qrToken = randomToken();
-    users.push({ id: "u_" + qrToken.slice(0, 12), fullName, email,
-                 phone: phoneInput, pwHash: await hashPassword(pw), qrToken, created: Date.now() });
-    DB.set("uc_users", users);
-    showQrResult(qrToken);
-  };
-};
-
-/* ═══ شاشة QR بعد التسجيل ═══ */
-function showQrResult(qrToken) {
-  $("app").innerHTML = `
-  <div class="fade max-w-md mx-auto glass p-8 text-center shadow-glow">
-    <h1 class="text-2xl font-black text-gold mb-2">تم إنشاء حسابك ✅</h1>
-    <p class="text-gray-400 text-sm mb-6">احفظ هذا الرمز — يمكنك استخدامه لتسجيل الدخول بدون كلمة السر</p>
-    <div class="inline-block bg-night p-4 rounded-2xl border border-gold/30 mb-6" id="qr_box"></div><br>
-    <button onclick="downloadQr('${qrToken}')" class="btn-gold w-full mb-3">⬇️ تحميل QR كصورة</button>
-    <button onclick="go('login')" class="w-full text-neon hover:underline text-sm">الانتقال لتسجيل الدخول</button>
-  </div>`;
-  QRCode.toCanvas(document.getElementById("qr_box").appendChild(document.createElement("canvas")),
-    qrToken, { width: 220, margin: 2, color: { dark: "#f5c542", light: "#0a0a0f" } });
-}
-function downloadQr(token) {
-  const c = document.createElement("canvas");
-  QRCode.toCanvas(c, token, { width: 600, margin: 2,
-    color: { dark: "#f5c542", light: "#0a0a0f" } }, () => {
-    const a = document.createElement("a");
-    a.href = c.toDataURL("image/png"); a.download = "my-login-qr.png"; a.click();
-  });
-}
-
-/* ═══ لوحة المستخدم ═══ */
-pages.dash = () => {
-  const u = currentUser();
-  if (!u) return go("login");
-  const my = orders.filter(o => o.userId === u.id).reverse();
-  const badge = s => ({ pending: ["قيد الانتظار","bg-yellow-500/20 text-yellow-400"],
-    shipped: ["تم الشحن ✅","bg-sky-500/20 text-neon"],
-    completed: ["مكتملة","bg-green-500/20 text-green-400"],
-    cancelled: ["ملغاة","bg-red-500/20 text-red-400"] }[s] || ["-",""]);
-  const newShip = my.filter(o => o.status === "shipped" && !o.seen);
-  $("app").innerHTML = `
-  <div class="fade grid md:grid-cols-3 gap-6">
-    <div class="glass p-6 text-center h-fit">
-      ${newShip.length ? `<div class="bg-neon/10 border border-neon/40 text-neon rounded-xl p-3 mb-4 text-sm">
-        🔔 طلبك رقم #${newShip[0].id.slice(-4)} تم شحنه بنجاح!</div>` : ""}
-      <div class="w-20 h-20 mx-auto rounded-full bg-gradient-to-r from-gold to-neon p-0.5 mb-3">
-        <div class="w-full h-full rounded-full bg-panel flex items-center justify-center text-3xl">🎮</div>
+      <div class="grid grid-cols-3 gap-1 mb-6 bg-night-700 rounded-xl p-1">
+        ${[['login','تسجيل دخول'],['signup','حساب جديد'],['qr','دخول بـ QR']].map(([k,l])=>
+          `<button onclick="authTab='${k}';renderAuth()" class="py-2 rounded-lg text-xs sm:text-sm font-bold transition ${authTab===k?'btn-gold':'text-gray-400 hover:text-white'}">${l}</button>`).join('')}
       </div>
-      <h2 class="text-xl font-black">${esc(u.fullName)}</h2>
-      <p class="text-gray-400 text-sm mb-4">${esc(u.email)}</p>
-      <div id="dash_qr" class="inline-block bg-night p-3 rounded-xl border border-gold/30 mb-4"></div><br>
-      <button onclick="downloadQr('${u.qrToken}')" class="btn-gold w-full mb-2">⬇️ تحميل QR كصورة</button>
-      <button onclick="logout()" class="text-red-400 text-sm hover:underline">تسجيل الخروج</button>
+      <div id="authForm"></div>
     </div>
-    <div class="md:col-span-2">
-      <h2 class="text-2xl font-black mb-4">📦 سجل الطلبات</h2>
-      ${my.length ? my.map(o => {
-        const p = PACKAGES.find(x => x.id === o.pkgId) || { name: o.pkgId, icon: "🪙" };
-        const [txt, cls] = badge(o.status);
-        return `<div class="glass p-4 mb-3 flex items-center justify-between gap-3">
-          <div class="flex items-center gap-3">
-            <span class="text-2xl">${p.icon}</span>
-            <div><div class="font-bold">${esc(p.name)}</div>
-            <div class="text-xs text-gray-400">آيدي: ${esc(o.playerId)} · #${o.id.slice(-4)}</div></div>
+  </section>`;
+  const f=$('authForm');
+  if(authTab==='login') f.innerHTML=`
+    <form onsubmit="doLogin(event)" class="space-y-4">
+      <div><label class="text-xs font-bold text-gray-400">البريد الإلكتروني أو رقم الهاتف</label>
+        <input id="li_id" required class="w-full rounded-xl px-4 py-3 mt-1" placeholder="example@mail.com أو 07xxxxxxxx"></div>
+      <div><label class="text-xs font-bold text-gray-400">كلمة السر</label>
+        <input id="li_pw" type="password" required class="w-full rounded-xl px-4 py-3 mt-1" placeholder="••••••••"></div>
+      <div class="text-left"><a href="#" onclick="go('forgot');return false" class="text-yellow-400 text-xs font-bold hover:underline">نسيت كلمة السر؟</a></div>
+      <button class="btn-gold w-full py-3 rounded-xl">دخول ⚡</button>
+    </form>`;
+  else if(authTab==='signup') f.innerHTML=`
+    <form onsubmit="doSignup(event)" class="space-y-3">
+      <div><label class="text-xs font-bold text-gray-400">الاسم الكامل</label>
+        <input id="su_name" required class="w-full rounded-xl px-4 py-2.5 mt-1" placeholder="اسمك الكامل"></div>
+      <div><label class="text-xs font-bold text-gray-400">البريد الإلكتروني</label>
+        <input id="su_mail" type="email" required class="w-full rounded-xl px-4 py-2.5 mt-1" placeholder="example@mail.com"></div>
+      <div><label class="text-xs font-bold text-gray-400">رقم الهاتف</label>
+        <input id="su_phone" required pattern="[0-9+]{9,15}" class="w-full rounded-xl px-4 py-2.5 mt-1" placeholder="07xxxxxxxxxx"></div>
+      <div><label class="text-xs font-bold text-gray-400">كلمة السر (8 أحرف على الأقل)</label>
+        <input id="su_pw" type="password" required minlength="8" class="w-full rounded-xl px-4 py-2.5 mt-1" placeholder="••••••••"></div>
+      <button class="btn-gold w-full py-3 rounded-xl">إنشاء حساب + توليد QR 🎫</button>
+    </form>`;
+  else f.innerHTML=`
+    <div class="space-y-4">
+      <button onclick="startScanner()" id="btnCam" class="btn-gold w-full py-3.5 rounded-xl text-lg">📷 فتح الكاميرا للمسح</button>
+      <div class="text-center text-gray-500 text-xs">— أو —</div>
+      <label class="block border-2 border-dashed border-yellow-500/40 rounded-xl p-6 text-center cursor-pointer hover:border-yellow-500 transition">
+        <input type="file" accept="image/*" class="hidden" onchange="scanImageFile(this)">
+        <div class="text-3xl mb-1">🖼️</div>
+        <span class="text-sm text-gray-300 font-bold">رفع صورة رمز QR</span>
+        <p class="text-xs text-gray-500 mt-1">من ملف كرت حسابك</p>
+      </label>
+      <div id="qr-reader" class="hidden"></div>
+    </div>`;
+}
+async function doLogin(e){
+  e.preventDefault();
+  const id=$('li_id').value.trim(), pw=$('li_pw').value;
+  const users=DB.read('users');
+  const u=users.find(x=>x.email===id||x.phone===id);
+  if(!u || !(await checkPassword(pw,u.salt,u.passwordHash))) return toast('❌ بيانات الدخول غير صحيحة','err');
+  saveSession({id:u.id,fullName:u.fullName,email:u.email,phone:u.phone});
+  toast(`✅ أهلاً بعودتك ${esc(u.fullName.split(' ')[0])}!`);
+}
+async function doSignup(e){
+  e.preventDefault();
+  const users=DB.read('users');
+  const name=$('su_name').value.trim(), mail=$('su_mail').value.trim().toLowerCase(),
+        phone=$('su_phone').value.trim(), pw=$('su_pw').value;
+  if(users.some(u=>u.email===mail)) return toast('❌ البريد الإلكتروني مسجل مسبقاً','err');
+  if(users.some(u=>u.phone===phone)) return toast('❌ رقم الهاتف مسجل مسبقاً','err');
+  const {salt,hash}=await hashPassword(pw);
+  const id='u_'+crypto.randomUUID().slice(0,8);
+  // توكن QR فريد مرتبط بحساب المستخدم — JWT بصلاحية سنة
+  const qrToken=await signJWT({sub:id,typ:'QR_LOGIN',exp:Date.now()+365*24*3600e3});
+  const user={id,fullName:name,email:mail,phone,salt,passwordHash:hash,qrToken,createdAt:Date.now()};
+  users.push(user); DB.write('users',users);
+  saveSession({id,fullName:name,email:mail,phone});
+  toast('🎉 تم إنشاء حسابك! كرت QR جاهز في لوحة حسابك');
+  go('dash');
+}
+function renderForgot(){
+  $('app').innerHTML=`
+  <section class="min-h-[85vh] flex items-center justify-center px-4">
+    <div class="glass rounded-3xl w-full max-w-md p-8">
+      <h2 class="text-xl font-black gold-text mb-4">🔑 استعادة كلمة السر</h2>
+      <form onsubmit="event.preventDefault();toast('📩 أُرسل رابط إعادة التعيين إلى بريدك (محاكاة)');go('auth')" class="space-y-4">
+        <input required class="w-full rounded-xl px-4 py-3" placeholder="بريدك الإلكتروني المسجل">
+        <button class="btn-gold w-full py-3 rounded-xl">إرسال رابط إعادة التعيين</button>
+        <a href="#" onclick="go('auth');return false" class="block text-center text-yellow-400 text-sm font-bold">رجوع لتسجيل الدخول</a>
+      </form>
+    </div>
+  </section>`;
+}
+
+/* ══════════════════════ تسجيل الدخول عبر QR ══════════════════════ */
+let scanner=null;
+function stopScanner(){ if(scanner){scanner.stop().catch(()=>{});scanner.clear();scanner=null;} }
+function startScanner(){
+  const el=$('qr-reader'); el.classList.remove('hidden');
+  scanner=new Html5Qrcode('qr-reader');
+  scanner.start({facingMode:'environment'},{fps:10,qrbox:230},
+    txt=>qrLogin(txt), ()=>{}
+  ).catch(()=>toast('❌ تعذر فتح الكاميرا — تأكد من الصلاحيات أو ارفع صورة','err'));
+}
+function scanImageFile(input){
+  const file=input.files[0]; if(!file) return;
+  const h5=new Html5Qrcode('qr-reader');
+  h5.scanFile(file,false).then(txt=>qrLogin(txt))
+    .catch(()=>toast('❌ لم يتم العثور على QR صالح في الصورة','err'));
+}
+async function qrLogin(token){
+  stopScanner();
+  // التحقق الأمني: التوقيع HMAC + الصلاحية + نوع التوكن (نفس منطق /api/auth/qr-login)
+  const payload=await verifyJWT(token);
+  const u=payload && DB.read('users').find(x=>x.id===payload.sub);
+  if(!u) return toast('❌ رمز QR غير صالح أو منتهي الصلاحية','err');
+  saveSession({id:u.id,fullName:u.fullName,email:u.email,phone:u.phone});
+  toast(`🔓 تم تسجيل الدخول عبر QR — أهلاً ${esc(u.fullName.split(' ')[0])}!`);
+}
+
+/* ══════════════════════ الصفحة الرئيسية ══════════════════════ */
+function renderHome(){
+  const slides=[
+    {t:'خصم 20% على جميع الحزم',s:'استخدم كود: UC20 عند الدفع — لفترة محدودة',c:'from-yellow-600/40 via-night-700 to-night-900'},
+    {t:'شحن فوري خلال 5 دقائق',s:'أسرع خدمة شدات في المنطقة 🚀',c:'from-blue-600/30 via-night-700 to-night-900'},
+    {t:'حزمة 8100 UC + 900 مجاناً',s:'أعلى قيمة وأكبر بونص 👑',c:'from-purple-600/30 via-night-700 to-night-900'}
+  ];
+  let si=0;
+  $('app').innerHTML=`
+  <section class="relative">
+    <div id="slider" class="relative h-72 sm:h-96 overflow-hidden">
+      ${slides.map((s,i)=>`
+        <div class="slide ${i===0?'active':''} absolute inset-0 bg-gradient-to-l ${s.c} flex items-center">
+          <div class="px-8 sm:px-16 max-w-2xl">
+            <h2 class="text-3xl sm:text-5xl font-black gold-text mb-3">${s.t}</h2>
+            <p class="text-gray-300 text-lg mb-5">${s.s}</p>
+            <button onclick="go('shop')" class="btn-gold px-8 py-3 rounded-xl">تسوّق الآن</button>
           </div>
-          <div class="text-left"><span class="badge ${cls}">${txt}</span>
-          <div class="text-xs text-gray-500 mt-1">${new Date(o.at).toLocaleDateString("ar")}</div></div>
-        </div>`;
-      }).join("") : `<div class="glass p-8 text-center text-gray-400">لا توجد طلبات بعد — ابدأ الشراء من الرئيسية 🛒</div>`}
+        </div>`).join('')}
+      <div class="absolute bottom-4 right-1/2 translate-x-1/2 flex gap-2" id="dots"></div>
     </div>
-  </div>`;
-  QRCode.toCanvas(document.getElementById("dash_qr").appendChild(document.createElement("canvas")),
-    u.qrToken, { width: 160, margin: 2, color: { dark: "#f5c542", light: "#0a0a0f" } });
-  my.forEach(o => o.seen = true); DB.set("uc_orders", orders);
+    <div class="max-w-6xl mx-auto px-4 -mt-10 relative z-10 grid grid-cols-1 sm:grid-cols-3 gap-4">
+      ${[['⚡','تسليم فوري','خلال 5 دقائق'],['🛡️','دفع آمن 100%','تشفير كامل للبيانات'],['💬','دعم 24/7','فريق دعم متواصل']].map(([i,t,s])=>`
+        <div class="glass rounded-2xl p-5 flex items-center gap-4">
+          <span class="text-3xl">${i}</span><div><p class="font-bold text-yellow-400">${t}</p><p class="text-sm text-gray-400">${s}</p></div>
+        </div>`).join('')}
+    </div>
+  </section>
+  <section class="max-w-6xl mx-auto px-4 mt-16">
+    <h2 class="text-2xl sm:text-3xl font-black gold-text mb-6 text-center">🔥 الحزم الأكثر طلباً</h2>
+    <div id="homePkgs" class="grid grid-cols-2 md:grid-cols-3 gap-5"></div>
+    <div class="text-center mt-8"><button onclick="go('shop')" class="btn-gold px-10 py-3 rounded-xl">عرض جميع الحزم</button></div>
+  </section>`;
+  renderPackageCards($('homePkgs'), DB.read('packages').slice(0,3));
+  // تشغيل السلايدر
+  const dots=$('dots');
+  slides.forEach((_,i)=>{const d=document.createElement('button');d.onclick=()=>show(i);d.className='w-3 h-3 rounded-full bg-white/30';dots.appendChild(d);});
+  function show(i){
+    document.querySelectorAll('.slide').forEach((s,j)=>s.classList.toggle('active',j===i));
+    dots.querySelectorAll('button').forEach((d,j)=>d.classList.toggle('bg-yellow-400',j===i));
+    si=i;
+  }
+  show(0);
+  setInterval(()=>show((si+1)%slides.length),5000);
+}
+
+/* ══════════════════════ المتجر + الشراء ══════════════════════ */
+function renderShop(){
+  $('app').innerHTML=`
+  <section class="max-w-6xl mx-auto px-4 py-12">
+    <h1 class="text-3xl font-black gold-text text-center mb-2">💰 حزم شدات ببجي موبايل</h1>
+    <p class="text-center text-gray-400 mb-10">اختر حزمتك وستصلك فوراً على حسابك</p>
+    <div id="shopPkgs" class="grid grid-cols-2 md:grid-cols-3 gap-6"></div>
+  </section>`;
+  renderPackageCards($('shopPkgs'), DB.read('packages'));
+}
+function renderPackageCards(el,pkgs){
+  el.innerHTML=pkgs.map(p=>`
+    <div class="glass card-hover rounded-2xl p-5 text-center relative ${p.badge?'border-yellow-500/50':''}">
+      ${p.badge?`<span class="absolute -top-3 right-1/2 translate-x-1/2 btn-gold text-xs px-3 py-1 rounded-full whitespace-nowrap">${p.badge}</span>`:''}
+      <div class="text-5xl mb-2">${p.logo}</div>
+      <p class="text-lg font-black text-white">${p.uc} UC</p>
+      ${p.bonus?`<p class="text-xs text-yellow-400 font-bold">${p.bonus} مجاناً</p>`:''}
+      <p class="text-2xl font-black gold-text my-3">${p.price}</p>
+      <button onclick="openCheckout('${p.id}')" class="btn-gold w-full py-2.5 rounded-xl text-sm">شراء الآن</button>
+    </div>`).join('');
+}
+function openCheckout(pid){
+  const p=DB.read('packages').find(x=>x.id===pid);
+  openModal(`
+    <h2 class="text-xl font-black gold-text mb-1">شراء ${p.uc} UC</h2>
+    <p class="text-gray-400 text-sm mb-5">السعر: <span class="text-yellow-400 font-bold">${p.price}</span> ${p.bonus?`| بونص <span class="text-yellow-400">${p.bonus}</span>`:''}</p>
+    <form onsubmit="submitOrder(event,'${pid}')" class="space-y-4">
+      <div><label class="text-xs font-bold text-gray-400">PUBG Player ID</label>
+        <input id="pl_id" required pattern="[0-9]{6,14}" class="w-full rounded-xl px-4 py-3 mt-1 font-mono" placeholder="مثال: 5123456789"
+               oninput="const v=this.value;$('plErr').textContent=(v.length<6||v.length>14)?'⚠️ الآيدي يجب أن يكون بين 6 و 14 رقماً':'';">
+        <p id="pl_err" class="text-red-400 text-xs mt-1"></p></div>
+      <div><label class="text-xs font-bold text-gray-400">طريقة الدفع</label>
+        <select id="pay_m" class="w-full rounded-xl px-4 py-3 mt-1">
+          <option value="zain">Zain Cash</option>
+          <option value="asia">Asia Hawala</option>
+          <option value="usdt">USDT (TRC20)</option>
+          <option value="manual">تحويل يدوي + إيصال</option>
+        </select></div>
+      <div id="receiptBox" class="hidden"><label class="text-xs font-bold text-gray-400">رفع إيصال الدفع</label>
+        <input type="file" accept="image/*" class="w-full rounded-xl px-4 py-2.5 mt-1 bg-night-700"></div>
+      <div class="glass rounded-xl p-3 text-sm text-gray-300">💳 بعد إتمام الطلب سيتم الشحن على الآيدي المدخل والتنبيه فور تغيّر الحالة.</div>
+      <button class="btn-gold w-full py-3 rounded-xl">تأكيد الطلب ✅</button>
+    </form>`);
+  $('pay_m').onchange=e=>$('receiptBox').classList.toggle('hidden',e.target.value!=='manual');
+}
+function submitOrder(e,pid){
+  e.preventDefault();
+  const p=DB.read('packages').find(x=>x.id===pid);
+  const playerId=$('pl_id').value.trim();
+  if(playerId.length<6||playerId.length>14) return toast('❌ آيدي اللاعب غير صالح','err');
+  const orders=DB.read('orders');
+  const order={id:'o_'+crypto.randomUUID().slice(0,8),userId:currentUser.id,packageId:pid,
+    uc:p.uc,price:p.price,playerId,paymentMethod:$('pay_m').value,
+    receiptName:$('receiptBox').querySelector('input').files[0]?.name||'',
+    status:'pending',createdAt:Date.now()};
+  orders.unshift(order); DB.write('orders',orders);
+  closeModal(); toast(`🎉 تم إنشاء طلبك (${p.uc} UC) — الحالة: قيد الانتظار`);
+  go('dash');
+}
+
+/* ══════════════════════ لوحة الملف الشخصي ══════════════════════ */
+function statusBadge(st){
+  return {pending:'<span class="text-xs px-3 py-1 rounded-full bg-yellow-500/20 text-yellow-400 font-bold">⏳ قيد الانتظار</span>',
+          shipped:'<span class="text-xs px-3 py-1 rounded-full bg-blue-500/20 text-blue-400 font-bold">🚚 تم الشحن</span>',
+          completed:'<span class="text-xs px-3 py-1 rounded-full bg-green-500/20 text-green-400 font-bold">✅ مكتملة</span>',
+          cancelled:'<span class="text-xs px-3 py-1 rounded-full bg-red-500/20 text-red-400 font-bold">❌ ملغاة</span>'}[st];
+}
+function renderDash(){
+  const u=DB.read('users').find(x=>x.id===currentUser.id);
+  const orders=DB.read('orders').filter(o=>o.userId===currentUser.id);
+  $('app').innerHTML=`
+  <section class="max-w-5xl mx-auto px-4 py-10 grid lg:grid-cols-3 gap-6">
+    <!-- كرت المستخدم + QR -->
+    <div class="glass rounded-3xl p-6 text-center h-fit">
+      <div class="w-20 h-20 mx-auto rounded-full btn-gold flex items-center justify-center text-3xl font-black mb-3">${esc(u.fullName[0])}</div>
+      <h2 class="text-lg font-black">${esc(u.fullName)}</h2>
+      <p class="text-gray-400 text-sm">${esc(u.email)}</p>
+      <p class="text-gray-500 text-xs mb-4">${esc(u.phone)}</p>
+      <div class="bg-white rounded-2xl p-4 inline-block mb-3" id="qrBox"></div>
+      <p class="text-xs text-gray-500 mb-3">امسح هذا الرمز للدخول بدون كلمة سر</p>
+      <button onclick="downloadQR()" class="btn-gold w-full py-2.5 rounded-xl text-sm mb-2">⬇️ تحميل QR كصورة</button>
+      <button onclick="copyToken('${u.qrToken}')" class="w-full py-2.5 rounded-xl bg-night-600 hover:bg-night-500 text-sm font-bold text-gray-300">📋 نسخ رمز QR Token</button>
+      <div class="mt-3 text-xs text-gray-600 font-mono break-all">ID: ${u.id}</div>
+    </div>
+    <!-- الطلبات -->
+    <div class="lg:col-span-2">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-2xl font-black gold-text">سجل الطلبات</h2>
+        <button onclick="go('shop')" class="btn-gold px-5 py-2 rounded-lg text-sm">+ طلب جديد</button>
+      </div>
+      <div class="space-y-3">
+        ${orders.length?orders.map(o=>`
+          <div class="glass rounded-2xl p-5 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p class="font-black text-lg">${o.uc} UC <span class="text-sm text-gray-400 font-normal">— ${esc(o.playerId)}</span></p>
+              <p class="text-xs text-gray-500 mt-1">${o.price} • ${new Date(o.createdAt).toLocaleString('ar')} • ${o.paymentMethod.toUpperCase()}${o.receiptName?' • 🧾 '+esc(o.receiptName):''}</p>
+            </div>
+            ${statusBadge(o.status)}
+          </div>`).join('')
+        :`<div class="glass rounded-2xl p-10 text-center text-gray-500">لا توجد طلبات بعد — ابدأ أول شحنة لك! 🚀</div>`}
+      </div>
+    </div>
+  </section>`;
+  new QRCode($('qrBox'),{text:u.qrToken,width:170,height:170,colorDark:'#0a0a0f',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.H});
+}
+function downloadQR(){
+  const canvas=$('qrBox').querySelector('canvas');
+  const a=document.createElement('a');
+  a.href=canvas.toDataURL('image/png');
+  a.download='uc-store-qr-'+currentUser.id+'.png';
+  a.click();
+  toast('⬇️ تم تحميل رمز QR — احفظه لتسجيل الدخول السريع');
+}
+function copyToken(t){ navigator.clipboard.writeText(t).then(()=>toast('📋 تم نسخ التوكن')); }
+
+/* ══════════════════════ نظام الإشعارات + محاكاة تغيّر الحالة (Demo) ══════════════════════ */
+function notifyStatusChange(orderId,newStatus){
+  toast(`🔔 تم شحن طلبك #${orderId} بنجاح! تحقق من حسابك`);
+}
+// زر ديمو في الكونسول لتجربة تغيّر حالة طلب: shipOrder('o_xxx')
+window.shipOrder=function(orderId){
+  const orders=DB.read('orders');
+  const o=orders.find(x=>x.id===orderId); if(!o) return 'order not found';
+  o.status='shipped'; DB.write('orders',orders);
+  if(currentUser&&o.userId===currentUser.id) notifyStatusChange(orderId,'shipped');
+  return 'shipped';
 };
 
-/* ═══ صفحة الدفع ═══ */
-let checkoutPkg = null;
-function requireLogin(pkgId) { toast("سجّل دخولك أولاً للشراء 🔐", false); go("login"); }
-function openCheckout(pkgId) {
-  checkoutPkg = PACKAGES.find(p => p.id === pkgId);
-  $("app").innerHTML = `
-  <div class="fade max-w-md mx-auto glass p-8">
-    <h1 class="text-2xl font-black text-gold mb-1">إتمام الشراء</h1>
-    <p class="text-gray-400 mb-6">${checkoutPkg.icon} ${checkoutPkg.name} ${checkoutPkg.bonus ? `+ ${checkoutPkg.bonus} إضافية` : ""} — الإجمالي: <b class="text-gold">${checkoutPkg.price}$</b></p>
-    <form id="ck_form" class="space-y-4">
-      <input id="ck_pid" class="input-dark" placeholder="PUBG Player ID (رقم فقط)"
-             pattern="\\d{6,12}" required>
-      <p class="text-xs text-gray-500">تجده في اللعبة: الملف الشخصي ← الأساسي ← معرّف اللاعب</p>
-      <div class="glass p-3 space-y-2">
-        <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="pay" value="بطاقة إلكترونية" checked class="accent-gold"> 💳 بطاقة إلكترونية</label>
-        <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="pay" value="محفظة إلكترونية" class="accent-gold"> 📱 محفظة إلكترونية</label>
-        <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="pay" value="تحويل يدوي" class="accent-gold"> 🧾 تحويل يدوي (رفع إيصال)</label>
-      </div>
-      <div id="ck_receipt" class="hidden">
-        <label class="text-sm text-gray-400 block mb-1">صورة الإيصال</label>
-        <input type="file" accept="image/*" class="input-dark !py-2">
-      </div>
-      <p id="ck_err" class="text-red-400 text-sm text-center hidden"></p>
-      <button class="btn-gold w-full">تأكيد الطلب</button>
-      <button type="button" onclick="go('home')" class="w-full text-sm text-gray-400 hover:text-white">إلغاء</button>
-    </form>
-  </div>`;
-  document.querySelector('input[name="pay"]').closest("form").addEventListener("change", e => {
-    if (e.target.name === "pay") $("ck_receipt").classList.toggle("hidden", e.target.value !== "تحويل يدوي");
-  });
-  $("ck_pid").closest("form").onsubmit = (e) => {
-    e.preventDefault();
-    const pid = $("ck_pid").value.trim();
-    const err = $("ck_err");
-    if (!/^\d{6,12}$/.test(pid)) { err.textContent = "الآيدي غير صالح (6-12 رقم)"; err.classList.remove("hidden"); return; }
-    const pay = document.querySelector('input[name="pay"]:checked').value;
-    const order = { id: "o_" + randomToken().slice(0, 12), userId: session, pkgId: checkoutPkg.id,
-      playerId: pid, pay: pay, price: checkoutPkg.price, status: "pending", at: Date.now(), seen: false };
-    orders.push(order); DB.set("uc_orders", orders);
-    setTimeout(() => { // محاكاة معالجة الطلب من لوحة الأدمن
-      const o = orders.find(x => x.id === order.id);
-      o.status = "shipped"; o.seen = false; DB.set("uc_orders", orders);
-    }, 15000);
-    $("app").innerHTML = `<div class="fade max-w-md mx-auto glass p-10 text-center shadow-glow">
-      <div class="text-5xl mb-4">🎉</div>
-      <h1 class="text-2xl font-black text-gold mb-2">تم استلام طلبك!</h1>
-      <p class="text-gray-400 text-sm mb-6">رقم الطلب: #${order.id.slice(-4)}<br>ستصلك إشعارات فور تغيّر الحالة</p>
-      <button onclick="go('dash')" class="btn-gold w-full">عرض سجل الطلبات</button></div>`;
-  };
-}
-
-/* ───── التنقل ───── */
-function go(page) {
-  window.scrollTo(0, 0);
-  (pages[page] || pages.home)();
-  updateNav();
-}
-function logout() {
-  session = null; DB.set("uc_session", null);
-  updateNav(); go("home"); toast("تم تسجيل الخروج");
-}
-go(session && currentUser() ? "dash" : "home");
+/* ══════════════════════ الإقلاع ══════════════════════ */
+renderNav();
+go(currentUser?'home':'auth');
 </script>
 </body>
 </html>
