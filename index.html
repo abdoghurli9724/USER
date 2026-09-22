@@ -35,7 +35,7 @@
 tailwind.config = {
   theme: { extend: {
     colors: {
-      night:  { 900:'#0a0a0f', 800:'#12121a', 700:'#1a1a26', 600:'#242433' },
+      night:  { 900:'#0a0a0f', 800:'#12121a', 700:'#1a1a26', 600:'#242433', 500:'#2e2e42' },
       gold:   { 400:'#ffd75e', 500:'#f5c542', 600:'#d4a017' },
       neon:   '#3ba9ff'
     },
@@ -72,14 +72,14 @@ tailwind.config = {
 <!-- ═══════════ الهيدر ═══════════ -->
 <header class="glass sticky top-0 z-40">
   <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-    <a href="#" onclick="go('home')" class="flex items-center gap-2">
+    <a href="#" onclick="go('home');return false" class="flex items-center gap-2">
       <div class="w-10 h-10 rounded-xl btn-gold flex items-center justify-center text-xl font-black">UC</div>
       <span class="text-2xl font-black gold-text hidden sm:block">UC STORE</span>
     </a>
     <nav class="hidden md:flex gap-6 text-sm font-semibold" id="navLinks">
-      <a href="#" onclick="go('home')"  class="hover:text-yellow-400 transition">الرئيسية</a>
-      <a href="#" onclick="go('shop')"  class="hover:text-yellow-400 transition">حزم الشدات</a>
-      <a href="#" onclick="go('dash')"  class="hover:text-yellow-400 transition">حسابي</a>
+      <a href="#" onclick="go('home');return false" class="hover:text-yellow-400 transition">الرئيسية</a>
+      <a href="#" onclick="go('shop');return false" class="hover:text-yellow-400 transition">حزم الشدات</a>
+      <a href="#" onclick="go('dash');return false" class="hover:text-yellow-400 transition">حسابي</a>
     </nav>
     <div id="authArea" class="flex items-center gap-2"></div>
   </div>
@@ -122,13 +122,28 @@ function seedPackages(){
 }
 seedPackages();
 
-/* ══════════════════════ JWT فعلي عبر Web Crypto (HMAC-SHA256) ══════════════════════ */
+/* ══════════════════════ JWT + التشفير — مع fallback إذا لم يتوفر crypto.subtle ══════════════════════ */
 const SECRET = 'UC_STORE_SUPER_SECRET_KEY_CHANGE_IN_PRODUCTION';
+const hasSubtle = !!(window.crypto && crypto.subtle);
 const b64u = buf=>btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/=+$/,'').replace(/\+/g,'-').replace(/\//g,'_');
+const fromB64u = s=>new Uint8Array(atob(s.replace(/-/g,'+').replace(/_/g,'/')).split('').map(c=>c.charCodeAt(0)));
 const b64uJSON = s=>JSON.parse(atob(s.replace(/-/g,'+').replace(/_/g,'/')));
+
+// fallback hash بسيط (djb2 متكرر) — فقط عندما يكون crypto.subtle غير متاح (غير آمن — للتجربة المحلية فقط)
+function fallbackHash(str){
+  let h1=5381,h2=52711;
+  for(let i=0;i<str.length;i++){
+    const c=str.charCodeAt(i);
+    h1=(h1*33^c)>>>0; h2=(h2*31^c)>>>0;
+  }
+  return 'fb_'+h1.toString(16)+h2.toString(16);
+}
 async function hmac(data){
-  const key = await crypto.subtle.importKey('raw',new TextEncoder().encode(SECRET),{name:'HMAC',hash:'SHA-256'},false,['sign']);
-  return b64u(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(data)));
+  if(hasSubtle){
+    const key = await crypto.subtle.importKey('raw',new TextEncoder().encode(SECRET),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+    return b64u(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(data)));
+  }
+  return fallbackHash(data+SECRET);
 }
 // توليد JWT: header.payload.signature
 async function signJWT(payload){
@@ -147,15 +162,21 @@ async function verifyJWT(token){
   }catch{ return null; }
 }
 async function hashPassword(pw){
-  const salt=crypto.getRandomValues(new Uint8Array(16));
-  const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),{name:'PBKDF2'},false,['deriveBits']);
-  const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:100000,hash:'SHA-256'},key,256);
-  return {salt:b64u(salt), hash:b64u(bits)};
+  if(hasSubtle){
+    const salt=crypto.getRandomValues(new Uint8Array(16));
+    const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),{name:'PBKDF2'},false,['deriveBits']);
+    const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:100000,hash:'SHA-256'},key,256);
+    return {salt:b64u(salt), hash:b64u(bits)};
+  }
+  return {salt:'fb_salt', hash:fallbackHash(pw)};
 }
 async function checkPassword(pw,salt,hash){
-  const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),{name:'PBKDF2'},false,['deriveBits']);
-  const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt:new Uint8Array(atob(salt.replace(/-/g,'+').replace(/_/g,'/')).split('').map(c=>c.charCodeAt(0))),iterations:100000,hash:'SHA-256'},key,256);
-  return b64u(bits)===hash;
+  if(hasSubtle){
+    const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),{name:'PBKDF2'},false,['deriveBits']);
+    const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt:fromB64u(salt),iterations:100000,hash:'SHA-256'},key,256);
+    return b64u(bits)===hash;
+  }
+  return fallbackHash(pw)===hash;
 }
 
 /* ══════════════════════ أدوات مساعدة ══════════════════════ */
@@ -226,7 +247,8 @@ function renderAuth(){
       <div><label class="text-xs font-bold text-gray-400">البريد الإلكتروني</label>
         <input id="su_mail" type="email" required class="w-full rounded-xl px-4 py-2.5 mt-1" placeholder="example@mail.com"></div>
       <div><label class="text-xs font-bold text-gray-400">رقم الهاتف</label>
-        <input id="su_phone" required pattern="[0-9+]{9,15}" class="w-full rounded-xl px-4 py-2.5 mt-1" placeholder="07xxxxxxxxxx"></div>
+        <input id="su_phone" required type="tel" class="w-full rounded-xl px-4 py-2.5 mt-1" placeholder="07xxxxxxxxxx">
+        <p id="su_err" class="text-red-400 text-xs mt-1"></p></div>
       <div><label class="text-xs font-bold text-gray-400">كلمة السر (8 أحرف على الأقل)</label>
         <input id="su_pw" type="password" required minlength="8" class="w-full rounded-xl px-4 py-2.5 mt-1" placeholder="••••••••"></div>
       <button class="btn-gold w-full py-3 rounded-xl">إنشاء حساب + توليد QR 🎫</button>
@@ -246,29 +268,44 @@ function renderAuth(){
 }
 async function doLogin(e){
   e.preventDefault();
-  const id=$('li_id').value.trim(), pw=$('li_pw').value;
-  const users=DB.read('users');
-  const u=users.find(x=>x.email===id||x.phone===id);
-  if(!u || !(await checkPassword(pw,u.salt,u.passwordHash))) return toast('❌ بيانات الدخول غير صحيحة','err');
-  saveSession({id:u.id,fullName:u.fullName,email:u.email,phone:u.phone});
-  toast(`✅ أهلاً بعودتك ${esc(u.fullName.split(' ')[0])}!`);
+  try{
+    const id=$('li_id').value.trim(), pw=$('li_pw').value;
+    const users=DB.read('users');
+    const u=users.find(x=>x.email===id||x.phone===id);
+    if(!u || !(await checkPassword(pw,u.salt,u.passwordHash))) return toast('❌ بيانات الدخول غير صحيحة','err');
+    saveSession({id:u.id,fullName:u.fullName,email:u.email,phone:u.phone});
+    toast(`✅ أهلاً بعودتك ${esc(u.fullName.split(' ')[0])}!`);
+  }catch(err){
+    console.error('Login error:',err);
+    toast('❌ حدث خطأ: '+esc(err.message||err),'err');
+  }
 }
 async function doSignup(e){
   e.preventDefault();
-  const users=DB.read('users');
-  const name=$('su_name').value.trim(), mail=$('su_mail').value.trim().toLowerCase(),
-        phone=$('su_phone').value.trim(), pw=$('su_pw').value;
-  if(users.some(u=>u.email===mail)) return toast('❌ البريد الإلكتروني مسجل مسبقاً','err');
-  if(users.some(u=>u.phone===phone)) return toast('❌ رقم الهاتف مسجل مسبقاً','err');
-  const {salt,hash}=await hashPassword(pw);
-  const id='u_'+crypto.randomUUID().slice(0,8);
-  // توكن QR فريد مرتبط بحساب المستخدم — JWT بصلاحية سنة
-  const qrToken=await signJWT({sub:id,typ:'QR_LOGIN',exp:Date.now()+365*24*3600e3});
-  const user={id,fullName:name,email:mail,phone,salt,passwordHash:hash,qrToken,createdAt:Date.now()};
-  users.push(user); DB.write('users',users);
-  saveSession({id,fullName:name,email:mail,phone});
-  toast('🎉 تم إنشاء حسابك! كرت QR جاهز في لوحة حسابك');
-  go('dash');
+  try{
+    const users=DB.read('users');
+    const name=$('su_name').value.trim(), mail=$('su_mail').value.trim().toLowerCase(),
+          phone=$('su_phone').value.trim(), pw=$('su_pw').value;
+    $('su_err').textContent='';
+    const digits=phone.replace(/\D/g,'');
+    if(digits.length<9||digits.length>15){
+      $('su_err').textContent='⚠️ رقم الهاتف غير صالح (9–15 رقماً)'; return;
+    }
+    if(users.some(u=>u.email===mail)) return toast('❌ البريد الإلكتروني مسجل مسبقاً','err');
+    if(users.some(u=>u.phone===digits)) return toast('❌ رقم الهاتف مسجل مسبقاً','err');
+    const {salt,hash}=await hashPassword(pw);
+    const id='u_'+(crypto.randomUUID?crypto.randomUUID().slice(0,8):Date.now().toString(36));
+    // توكن QR فريد مرتبط بحساب المستخدم — JWT بصلاحية سنة
+    const qrToken=await signJWT({sub:id,typ:'QR_LOGIN',exp:Date.now()+365*24*3600e3});
+    const user={id,fullName:name,email:mail,phone:digits,salt,passwordHash:hash,qrToken,createdAt:Date.now()};
+    users.push(user); DB.write('users',users);
+    saveSession({id,fullName:name,email:mail,phone:digits});
+    toast('🎉 تم إنشاء حسابك! كرت QR جاهز في لوحة حسابك');
+    go('dash');
+  }catch(err){
+    console.error('Signup error:',err);
+    toast('❌ حدث خطأ: '+esc(err.message||err),'err');
+  }
 }
 function renderForgot(){
   $('app').innerHTML=`
@@ -384,8 +421,8 @@ function openCheckout(pid){
     <p class="text-gray-400 text-sm mb-5">السعر: <span class="text-yellow-400 font-bold">${p.price}</span> ${p.bonus?`| بونص <span class="text-yellow-400">${p.bonus}</span>`:''}</p>
     <form onsubmit="submitOrder(event,'${pid}')" class="space-y-4">
       <div><label class="text-xs font-bold text-gray-400">PUBG Player ID</label>
-        <input id="pl_id" required pattern="[0-9]{6,14}" class="w-full rounded-xl px-4 py-3 mt-1 font-mono" placeholder="مثال: 5123456789"
-               oninput="const v=this.value;$('plErr').textContent=(v.length<6||v.length>14)?'⚠️ الآيدي يجب أن يكون بين 6 و 14 رقماً':'';">
+        <input id="pl_id" required inputmode="numeric" class="w-full rounded-xl px-4 py-3 mt-1 font-mono" placeholder="مثال: 5123456789"
+               oninput="const v=this.value.replace(/\\D/g,'');this.value=v;$('pl_err').textContent=(v.length>0&&(v.length<6||v.length>14))?'⚠️ الآيدي يجب أن يكون بين 6 و 14 رقماً':'';">
         <p id="pl_err" class="text-red-400 text-xs mt-1"></p></div>
       <div><label class="text-xs font-bold text-gray-400">طريقة الدفع</label>
         <select id="pay_m" class="w-full rounded-xl px-4 py-3 mt-1">
@@ -403,17 +440,23 @@ function openCheckout(pid){
 }
 function submitOrder(e,pid){
   e.preventDefault();
-  const p=DB.read('packages').find(x=>x.id===pid);
-  const playerId=$('pl_id').value.trim();
-  if(playerId.length<6||playerId.length>14) return toast('❌ آيدي اللاعب غير صالح','err');
-  const orders=DB.read('orders');
-  const order={id:'o_'+crypto.randomUUID().slice(0,8),userId:currentUser.id,packageId:pid,
-    uc:p.uc,price:p.price,playerId,paymentMethod:$('pay_m').value,
-    receiptName:$('receiptBox').querySelector('input').files[0]?.name||'',
-    status:'pending',createdAt:Date.now()};
-  orders.unshift(order); DB.write('orders',orders);
-  closeModal(); toast(`🎉 تم إنشاء طلبك (${p.uc} UC) — الحالة: قيد الانتظار`);
-  go('dash');
+  try{
+    const p=DB.read('packages').find(x=>x.id===pid);
+    const playerId=$('pl_id').value.trim();
+    if(playerId.length<6||playerId.length>14) return toast('❌ آيدي اللاعب غير صالح','err');
+    const orders=DB.read('orders');
+    const order={id:'o_'+(crypto.randomUUID?crypto.randomUUID().slice(0,8):Date.now().toString(36)),
+      userId:currentUser.id,packageId:pid,uc:p.uc,price:p.price,playerId,
+      paymentMethod:$('pay_m').value,
+      receiptName:$('receiptBox').querySelector('input').files[0]?.name||'',
+      status:'pending',createdAt:Date.now()};
+    orders.unshift(order); DB.write('orders',orders);
+    closeModal(); toast(`🎉 تم إنشاء طلبك (${p.uc} UC) — الحالة: قيد الانتظار`);
+    go('dash');
+  }catch(err){
+    console.error('Order error:',err);
+    toast('❌ حدث خطأ: '+esc(err.message||err),'err');
+  }
 }
 
 /* ══════════════════════ لوحة الملف الشخصي ══════════════════════ */
@@ -425,6 +468,7 @@ function statusBadge(st){
 }
 function renderDash(){
   const u=DB.read('users').find(x=>x.id===currentUser.id);
+  if(!u){ saveSession(null); return; }
   const orders=DB.read('orders').filter(o=>o.userId===currentUser.id);
   $('app').innerHTML=`
   <section class="max-w-5xl mx-auto px-4 py-10 grid lg:grid-cols-3 gap-6">
@@ -459,10 +503,12 @@ function renderDash(){
       </div>
     </div>
   </section>`;
+  $('qrBox').innerHTML='';
   new QRCode($('qrBox'),{text:u.qrToken,width:170,height:170,colorDark:'#0a0a0f',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.H});
 }
 function downloadQR(){
   const canvas=$('qrBox').querySelector('canvas');
+  if(!canvas) return toast('❌ لم يتم توليد QR بعد','err');
   const a=document.createElement('a');
   a.href=canvas.toDataURL('image/png');
   a.download='uc-store-qr-'+currentUser.id+'.png';
